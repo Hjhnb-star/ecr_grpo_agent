@@ -1,0 +1,5 @@
+kernel,num_updates,success_rate,avg_steps,avg_env_return,output_dir
+trajectory,2,0.0,9.125,-0.25312500000000016,runs\baseline_check\trajectory
+uniform,2,0.0,9.125,-0.23145833333333343,runs\baseline_check\uniform
+recency,2,0.0,9.125,-0.22250000000000006,runs\baseline_check\recency
+dependency,2,0.0,9.125,-0.19375,runs\baseline_check\dependency

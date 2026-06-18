@@ -1,0 +1,68 @@
+{
+  "experiment_name": "alfworld_hf_lora_placeholder",
+  "output_dir": "runs/alfworld_hf_lora",
+  "seed": 7,
+  "environment": {
+    "name": "alfworld",
+    "alfworld_config": "REPLACE_WITH_ALFWORLD_CONFIG.yaml",
+    "split": "eval_out_of_distribution",
+    "num_tasks": 16,
+    "max_steps": 30,
+    "action_space": [
+      "look",
+      "inventory",
+      "go north",
+      "go south",
+      "go east",
+      "go west",
+      "open door",
+      "close door",
+      "take object",
+      "put object in/on receptacle"
+    ]
+  },
+  "async": {
+    "enabled": true,
+    "delay_prob": 0.3,
+    "max_delay_steps": 3,
+    "timeout_prob": 0.05,
+    "interruption_prob": 0.02,
+    "missing_reward_prob": 0.05,
+    "terminal_reward_delay": 2
+  },
+  "credit": {
+    "kernel": "dependency",
+    "lambda": 0.25,
+    "max_pending_age": 10,
+    "timeout_penalty": -0.2,
+    "tool_match_bonus": 1.2,
+    "subgoal_match_bonus": 1.2
+  },
+  "policy": {
+    "kind": "hf_lora",
+    "model_id": "REPLACE_WITH_HF_MODEL_ID_OR_LOCAL_PATH",
+    "adapter_path": null,
+    "use_lora": true,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "device": null,
+    "max_new_tokens": 16,
+    "temperature": 0.7,
+    "top_p": 0.95
+  },
+  "training": {
+    "num_updates": 50,
+    "tasks_per_update": 2,
+    "group_size": 2,
+    "learning_rate": 5.0e-6,
+    "clip_eps": 0.2,
+    "grad_accum_steps": 4
+  },
+  "evaluation": {
+    "every_updates": 5,
+    "num_eval_tasks": 16,
+    "delay_sweep": [0.0, 0.2, 0.4, 0.6]
+  }
+}
+
