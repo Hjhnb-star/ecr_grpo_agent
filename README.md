@@ -18,6 +18,7 @@ ALFWorld, ScienceWorld, WebShop, or tool-orchestration tasks.
   - uniform
   - recency
   - dependency-aware
+  - evidence attribution without oracle step links
 - GRPO-style group-relative step advantages.
 - Lightweight tabular text-action policy for smoke experiments.
 - Optional HuggingFace causal-LM policy with LoRA and a compact clipped GRPO update.
@@ -50,6 +51,20 @@ python -m ecr_grpo.run_baselines --config configs\smoke.json --updates 30
 ```
 
 This writes `runs/baselines/comparison.csv`.
+
+To test the non-oracle attribution path:
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -m ecr_grpo.trainer --config configs\smoke_evidence_no_oracle.json
+```
+
+In this setting the async wrapper removes `related_step_id`, `related_tool`, and
+`related_subgoal` before credit assignment. The `evidence` kernel must infer event-to-step
+weights from generic signals: event time, action/effect text, observation deltas, and optional
+metadata tags. This is the recommended path for arguing that ECR-GRPO is a general credit
+assignment algorithm rather than a benchmark-specific rule system. The older `dependency`
+kernel is best treated as an oracle/upper-bound baseline when a benchmark exposes exact links.
 
 ## HuggingFace + LoRA Placeholder
 

@@ -62,12 +62,19 @@ class HFLoraPolicy:
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         if self.tokenizer.pad_token is None and self.tokenizer.eos_token is not None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+        self.pad_token_id = self.tokenizer.pad_token_id or self.tokenizer.eos_token_id
+        self.eos_token_id = self.tokenizer.eos_token_id
 
         dtype = torch.bfloat16 if self.device == "cuda" and torch.cuda.is_bf16_supported() else None
         kwargs: dict[str, Any] = {"trust_remote_code": True}
         if dtype is not None:
-            kwargs["torch_dtype"] = dtype
-        self.model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
+            kwargs["dtype"] = dtype
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
+        except TypeError:
+            if "dtype" in kwargs:
+                kwargs["torch_dtype"] = kwargs.pop("dtype")
+            self.model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
         self.model.to(self.device)
 
         if adapter_path:
@@ -101,18 +108,25 @@ class HFLoraPolicy:
         torch = self.torch
         actions = action_space or self.action_space
         prompt = format_agent_prompt(observation, actions)
-        prompt_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+        encoded = self.tokenizer(prompt, return_tensors="pt")
+        prompt_ids = encoded.input_ids.to(self.device)
+        attention_mask = encoded.attention_mask.to(self.device)
 
+        gen_kwargs: dict[str, Any] = {
+            "input_ids": prompt_ids,
+            "attention_mask": attention_mask,
+            "max_new_tokens": self.max_new_tokens,
+            "do_sample": not greedy,
+            "pad_token_id": self.pad_token_id,
+            "eos_token_id": self.eos_token_id,
+        }
+        if not greedy:
+            gen_kwargs["temperature"] = max(self.temperature, 1e-6)
+            gen_kwargs["top_p"] = self.top_p
+
+        self.model.eval()
         with torch.no_grad():
-            generated = self.model.generate(
-                prompt_ids,
-                max_new_tokens=self.max_new_tokens,
-                do_sample=not greedy,
-                temperature=max(self.temperature, 1e-6),
-                top_p=self.top_p,
-                pad_token_id=self.tokenizer.eos_token_id,
-                eos_token_id=self.tokenizer.eos_token_id,
-            )
+            generated = self.model.generate(**gen_kwargs)
         raw_response_ids = generated[0, prompt_ids.shape[1] :].detach().cpu().tolist()
         raw_text = self.tokenizer.decode(raw_response_ids, skip_special_tokens=True)
         action = self._parse_action(raw_text, actions)
@@ -171,7 +185,8 @@ class HFLoraPolicy:
     def _sequence_logprob(self, prompt_ids: list[int], response_ids: list[int]):
         torch = self.torch
         ids = torch.tensor([prompt_ids + response_ids], device=self.device, dtype=torch.long)
-        outputs = self.model(input_ids=ids)
+        attention_mask = torch.ones_like(ids, device=self.device)
+        outputs = self.model(input_ids=ids, attention_mask=attention_mask)
         logits = outputs.logits[:, :-1, :]
         targets = ids[:, 1:]
         logprobs = torch.log_softmax(logits.float(), dim=-1)
@@ -187,7 +202,7 @@ class HFLoraPolicy:
         suffix = self.tokenizer.eos_token or ""
         ids = self.tokenizer(action + suffix, add_special_tokens=False).input_ids
         if not ids:
-            ids = [self.tokenizer.eos_token_id]
+            ids = [self.eos_token_id or self.pad_token_id]
         return ids
 
     def _parse_action(self, text: str, actions: list[str]) -> str:

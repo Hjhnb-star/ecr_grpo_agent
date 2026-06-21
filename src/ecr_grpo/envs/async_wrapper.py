@@ -109,6 +109,13 @@ class AsyncEnvWrapper:
     def _schedule(self, event: AsyncEvent, *, delay: int) -> None:
         self.counter += 1
         due = self.current_time + max(0, delay)
+        use_oracle_links = bool(self.config.get("use_oracle_event_links", True))
+        metadata = {**event.metadata, "source_time": event.event_time, "delay": delay}
+        if use_oracle_links:
+            if event.related_tool is not None:
+                metadata.setdefault("tool", event.related_tool)
+            if event.related_subgoal is not None:
+                metadata.setdefault("subgoal", event.related_subgoal)
         delayed = AsyncEvent(
             task_id=event.task_id,
             episode_id=event.episode_id,
@@ -116,12 +123,12 @@ class AsyncEnvWrapper:
             event_type=event.event_type,
             event_time=due,
             reward=event.reward,
-            related_step_id=event.related_step_id,
-            related_tool=event.related_tool,
-            related_subgoal=event.related_subgoal,
+            related_step_id=event.related_step_id if use_oracle_links else None,
+            related_tool=event.related_tool if use_oracle_links else None,
+            related_subgoal=event.related_subgoal if use_oracle_links else None,
             observation_delta=event.observation_delta,
             terminal=event.terminal,
-            metadata={**event.metadata, "source_time": event.event_time, "delay": delay},
+            metadata=metadata,
         )
         heapq.heappush(self.queue, ScheduledEvent(due, self.counter, delayed))
 

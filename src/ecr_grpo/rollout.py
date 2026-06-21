@@ -48,12 +48,15 @@ def collect_rollout_group(
                 action_space=list(env.action_space),
                 prompt_ids=action.prompt_ids,
                 response_ids=action.response_ids,
-                tool_name=action.text,
-                subgoal_id=info.get("expected_action"),
+                tool_name=info.get("tool_name") or info.get("called_tool"),
+                subgoal_id=info.get("subgoal_id"),
                 immediate_reward=0.0,
                 metadata={
+                    "action": action.text,
                     "causal_action": info.get("causal_action", False),
                     "expected_action": info.get("expected_action"),
+                    "subgoal": info.get("subgoal_id") or info.get("expected_action"),
+                    "tags": info.get("tags", []),
                 },
             )
             buffer.add_step(step)

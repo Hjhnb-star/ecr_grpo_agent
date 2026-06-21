@@ -48,7 +48,7 @@ def main() -> None:
     parser.add_argument(
         "--kernels",
         nargs="+",
-        default=["trajectory", "uniform", "recency", "dependency"],
+        default=["trajectory", "uniform", "recency", "dependency", "evidence"],
     )
     parser.add_argument("--updates", type=int, default=None)
     parser.add_argument("--output-root", default="runs/baselines")
@@ -71,4 +71,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

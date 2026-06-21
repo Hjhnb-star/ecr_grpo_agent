@@ -42,7 +42,7 @@
   },
   "policy": {
     "kind": "hf_lora",
-    "model_id": "REPLACE_WITH_HF_MODEL_ID_OR_LOCAL_PATH",
+    "model_id": "/home/hjh/hjh_playbook/ecr_grpo_server/models/Qwen/Qwen2.5-1.5B-Instruct",
     "adapter_path": null,
     "use_lora": true,
     "lora_r": 8,
@@ -59,7 +59,8 @@
     "group_size": 2,
     "learning_rate": 5.0e-6,
     "clip_eps": 0.2,
-    "grad_accum_steps": 4
+    "grad_accum_steps": 4,
+    "checkpoint_every": 5
   },
   "evaluation": {
     "every_updates": 5,
@@ -67,4 +68,5 @@
     "delay_sweep": [0.0, 0.3, 0.6]
   }
 }
+
 

@@ -4,10 +4,20 @@
   "seed": 7,
   "environment": {
     "name": "alfworld",
-    "alfworld_config": "REPLACE_WITH_ALFWORLD_CONFIG.yaml",
+    "alfworld_config": "/home/hjh/hjh_playbook/alfworld/configs/base_config.yaml",
     "split": "eval_out_of_distribution",
-    "num_tasks": 16,
-    "max_steps": 30,
+    "reuse_env": true,
+    "num_tasks": 4,
+    "max_steps": 15,
+    "shaping": {
+      "enabled": true,
+      "valid_action_reward": 0.02,
+      "observation_change_reward": 0.03,
+      "new_state_reward": 0.02,
+      "stagnation_penalty": -0.02,
+      "repeat_action_penalty": -0.03,
+      "invalid_action_penalty": -0.05
+    },
     "action_space": [
       "look",
       "inventory",
@@ -40,7 +50,7 @@
   },
   "policy": {
     "kind": "hf_lora",
-    "model_id": "REPLACE_WITH_HF_MODEL_ID_OR_LOCAL_PATH",
+    "model_id": "/home/hjh/hjh_playbook/ecr_grpo_server/models/Qwen/Qwen2.5-1.5B-Instruct",
     "adapter_path": null,
     "use_lora": true,
     "lora_r": 8,
@@ -52,17 +62,17 @@
     "top_p": 0.95
   },
   "training": {
-    "num_updates": 50,
-    "tasks_per_update": 2,
-    "group_size": 2,
+    "num_updates": 20,
+    "tasks_per_update": 1,
+    "group_size": 1,
     "learning_rate": 5.0e-6,
     "clip_eps": 0.2,
-    "grad_accum_steps": 4
+    "grad_accum_steps": 1,
+    "checkpoint_every": 5
   },
   "evaluation": {
     "every_updates": 5,
-    "num_eval_tasks": 16,
-    "delay_sweep": [0.0, 0.2, 0.4, 0.6]
+    "num_eval_tasks": 4,
+    "delay_sweep": [0.0]
   }
 }
-

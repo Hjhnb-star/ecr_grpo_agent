@@ -29,6 +29,7 @@ class ECRGRPOTrainer:
         self.max_steps = int(config["environment"].get("max_steps", 10))
         self.kernel = build_credit_kernel(config.get("credit", {}))
         self.policy = build_policy(config, self.action_space, seed=self.seed)
+        self._cached_alfworld_env = None
         self.train_rows: list[dict] = []
         self.eval_rows: list[dict] = []
 
@@ -42,6 +43,7 @@ class ECRGRPOTrainer:
         lr = float(train_cfg.get("learning_rate", 0.1))
         max_pending_age = int(self.config.get("credit", {}).get("max_pending_age", 8))
         eval_every = int(eval_cfg.get("every_updates", 10))
+        checkpoint_every = int(train_cfg.get("checkpoint_every", 0))
 
         for update_idx in range(1, num_updates + 1):
             chosen_tasks = self.rng.sample(self.tasks, k=min(tasks_per_update, len(self.tasks)))
@@ -106,8 +108,11 @@ class ECRGRPOTrainer:
                     f"credit_causal={row['credit_mass_on_causal_steps']:.3f} "
                     f"entropy={row['entropy']:.3f}"
                 )
+            if checkpoint_every > 0 and (update_idx % checkpoint_every == 0 or update_idx == num_updates):
+                self._save_checkpoint(update_idx)
 
         self.robustness_sweep()
+        self._save_checkpoint(num_updates, latest_only=True)
 
     def evaluate(self) -> dict[str, float]:
         num_eval = int(self.config.get("evaluation", {}).get("num_eval_tasks", len(self.tasks)))
@@ -139,21 +144,36 @@ class ECRGRPOTrainer:
                 max_steps=self.max_steps,
                 seed=base_seed,
             )
-        elif env_name == "alfworld":
+            return AsyncEnvWrapper(
+                base,
+                config={**self.config.get("async", {}), **self.config.get("credit", {})},
+                seed=base_seed + 1,
+            )
+        if env_name == "alfworld":
             env_cfg = self.config["environment"]
+            reuse = bool(env_cfg.get("reuse_env", True))
+            if reuse and self._cached_alfworld_env is not None:
+                self._cached_alfworld_env.config = {
+                    **self.config.get("async", {}),
+                    **self.config.get("credit", {}),
+                }
+                return self._cached_alfworld_env
             base = ALFWorldEnv(
                 alfworld_config=str(env_cfg.get("alfworld_config", "REPLACE_WITH_ALFWORLD_CONFIG.yaml")),
                 split=str(env_cfg.get("split", "eval_out_of_distribution")),
                 fallback_action_space=self.action_space,
+                shaping_config=env_cfg.get("shaping", {}),
                 seed=base_seed,
             )
-        else:
-            raise ValueError(f"Unknown environment: {env_name}")
-        return AsyncEnvWrapper(
-            base,
-            config={**self.config.get("async", {}), **self.config.get("credit", {})},
-            seed=base_seed + 1,
-        )
+            wrapped = AsyncEnvWrapper(
+                base,
+                config={**self.config.get("async", {}), **self.config.get("credit", {})},
+                seed=base_seed + 1,
+            )
+            if reuse:
+                self._cached_alfworld_env = wrapped
+            return wrapped
+        raise ValueError(f"Unknown environment: {env_name}")
 
     def _build_tasks(self):
         env_name = str(self.config["environment"].get("name", "synthetic")).lower()
@@ -171,6 +191,22 @@ class ECRGRPOTrainer:
             json.dumps(self.config, indent=2, ensure_ascii=True),
             encoding="utf-8",
         )
+
+    def _save_checkpoint(self, update_idx: int, *, latest_only: bool = False) -> None:
+        if not hasattr(self.policy, "save"):
+            return
+        ckpt_root = self.output_dir / "checkpoints"
+        ckpt_root.mkdir(parents=True, exist_ok=True)
+        latest = ckpt_root / "latest"
+        if latest.exists():
+            shutil.rmtree(latest)
+        self.policy.save(str(latest))
+        if latest_only:
+            return
+        numbered = ckpt_root / f"update_{update_idx:04d}"
+        if numbered.exists():
+            shutil.rmtree(numbered)
+        self.policy.save(str(numbered))
 
 
 def main() -> None:

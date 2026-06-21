@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+import hashlib
 from collections import defaultdict
 
 from ecr_grpo.types import PolicyAction, StepRecord
@@ -27,7 +28,11 @@ def observation_key(observation: str) -> str:
     task = next((p for p in parts if p.startswith("task=")), "task=unknown")
     progress = next((p for p in parts if p.startswith("progress=")), "progress=unknown")
     hint = next((p for p in parts if p.startswith("hint=")), "hint=unknown")
-    return f"{task}|{progress}|{hint}"
+    if task != "task=unknown" or progress != "progress=unknown" or hint != "hint=unknown":
+        return f"{task}|{progress}|{hint}"
+    normalized = " ".join(observation.lower().split())
+    digest = hashlib.sha1(normalized.encode("utf-8")).hexdigest()[:12]
+    return f"text_obs:{digest}"
 
 
 class TabularSoftmaxPolicy:

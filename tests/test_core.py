@@ -4,7 +4,7 @@ import unittest
 
 from ecr_grpo.advantages import compute_group_advantages
 from ecr_grpo.buffers import PendingStepBuffer
-from ecr_grpo.credit_kernels import DependencyAwareKernel, RecencyDecayKernel, UniformKernel
+from ecr_grpo.credit_kernels import DependencyAwareKernel, EvidenceKernel, RecencyDecayKernel, UniformKernel
 from ecr_grpo.types import AsyncEvent, StepRecord
 
 
@@ -55,6 +55,27 @@ class CoreTests(unittest.TestCase):
         weights = DependencyAwareKernel().weights(event(), steps)
         self.assertEqual(max(range(len(weights)), key=lambda i: weights[i]), 2)
 
+    def test_evidence_kernel_works_without_oracle_links(self) -> None:
+        steps = [
+            step(0, "search_web", "search"),
+            step(1, "extract_fact", "extract"),
+            step(2, "answer", "answer"),
+        ]
+        steps[1].metadata["tags"] = ["extract_fact", "verified"]
+        evt = AsyncEvent(
+            task_id="task",
+            episode_id="ep",
+            event_id="evt",
+            event_type="partial_reward",
+            event_time=3,
+            reward=1.0,
+            observation_delta="extracted fact verified",
+            terminal=False,
+            metadata={"source_time": 2, "tags": ["extract_fact", "verified"]},
+        )
+        weights = EvidenceKernel(lambda_=0.2).weights(evt, steps)
+        self.assertEqual(max(range(len(weights)), key=lambda i: weights[i]), 1)
+
     def test_buffer_assigns_credit(self) -> None:
         buffer = PendingStepBuffer(max_age=5)
         for i in range(3):
@@ -76,4 +97,3 @@ class CoreTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

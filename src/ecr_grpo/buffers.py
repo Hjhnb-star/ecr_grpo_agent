@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from ecr_grpo.attribution import event_source_time
 from ecr_grpo.credit_kernels import CreditKernel
 from ecr_grpo.types import AsyncEvent, CreditAssignment, StepRecord
 
@@ -13,12 +14,15 @@ class PendingStepBuffer:
         self.steps[step.key] = step
 
     def related_steps(self, event: AsyncEvent) -> list[StepRecord]:
+        source_time = event_source_time(event)
+        cutoff_step_id = event.related_step_id
         candidates = [
             step
             for step in self.steps.values()
             if step.task_id == event.task_id
             and step.episode_id == event.episode_id
-            and step.step_id <= (event.related_step_id if event.related_step_id is not None else step.step_id)
+            and step.env_time <= source_time
+            and (cutoff_step_id is None or step.step_id <= cutoff_step_id)
             and step.status in {"pending", "credited"}
         ]
         candidates.sort(key=lambda s: s.step_id)
@@ -28,12 +32,16 @@ class PendingStepBuffer:
         steps = self.related_steps(event)
         weights = kernel.weights(event, steps)
         assignments: list[CreditAssignment] = []
-        for step, weight in zip(steps, weights):
+        reasons = getattr(kernel, "last_reasons", None)
+        for idx, (step, weight) in enumerate(zip(steps, weights)):
             if weight == 0.0:
                 continue
             credit = event.reward * weight
             step.filled_credit += credit
             step.status = "terminal" if event.terminal else "credited"
+            reason = kernel.name
+            if reasons and idx < len(reasons):
+                reason = f"{kernel.name}:{reasons[idx]}"
             assignments.append(
                 CreditAssignment(
                     step_key=step.key,
@@ -41,7 +49,7 @@ class PendingStepBuffer:
                     raw_reward=event.reward,
                     kernel_weight=weight,
                     assigned_credit=credit,
-                    reason=kernel.name,
+                    reason=reason,
                 )
             )
         return assignments
@@ -62,4 +70,3 @@ class PendingStepBuffer:
             if step.episode_id == episode_id:
                 ready.append(self.steps.pop(key))
         return ready
-
