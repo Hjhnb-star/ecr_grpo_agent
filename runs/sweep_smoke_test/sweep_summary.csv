@@ -1,0 +1,3 @@
+param,value,kernel,num_updates,success_rate,avg_steps,avg_env_return,credit_mass_on_causal_steps,positive_credit_frac,entropy,output_dir
+async.timeout_prob,0.0,recency,1,0.0,8.1875,-0.20875000000000002,0.8725065792250376,0.050359712230215826,2.553604190410523,runs\sweep_smoke_test\async_timeout_prob=0p0\recency
+async.timeout_prob,0.0,evidence,1,0.0,8.1875,-0.20875000000000002,0.8710865720257001,0.0539568345323741,2.553587883013066,runs\sweep_smoke_test\async_timeout_prob=0p0\evidence

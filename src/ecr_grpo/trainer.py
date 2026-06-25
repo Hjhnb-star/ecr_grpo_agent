@@ -143,6 +143,7 @@ class ECRGRPOTrainer:
                 action_space=self.action_space,
                 max_steps=self.max_steps,
                 seed=base_seed,
+                non_local_credit=self.config["environment"].get("non_local_credit", {}),
             )
             return AsyncEnvWrapper(
                 base,

@@ -1,15 +1,30 @@
 {
   "experiment_name": "smoke_evidence_no_oracle",
-  "output_dir": "runs/smoke_evidence_no_oracle",
+  "output_dir": "runs\\sweep_aggregate_smoke\\seed=7\\evidence",
   "seed": 7,
   "environment": {
     "name": "synthetic",
     "num_tasks": 48,
     "max_steps": 10,
     "sequences": [
-      ["find_key", "open_box", "read_code", "submit_code"],
-      ["search_web", "extract_fact", "verify_fact", "answer"],
-      ["inspect_file", "edit_file", "run_test", "submit_code"]
+      [
+        "find_key",
+        "open_box",
+        "read_code",
+        "submit_code"
+      ],
+      [
+        "search_web",
+        "extract_fact",
+        "verify_fact",
+        "answer"
+      ],
+      [
+        "inspect_file",
+        "edit_file",
+        "run_test",
+        "submit_code"
+      ]
     ],
     "action_space": [
       "find_key",
@@ -34,7 +49,7 @@
     "timeout_prob": 0.08,
     "interruption_prob": 0.03,
     "missing_reward_prob": 0.08,
-    "terminal_reward_delay": 5,
+    "terminal_reward_delay": 2,
     "use_oracle_event_links": false
   },
   "credit": {
@@ -55,7 +70,7 @@
     "init_scale": 0.01
   },
   "training": {
-    "num_updates": 80,
+    "num_updates": 1,
     "tasks_per_update": 8,
     "group_size": 4,
     "learning_rate": 0.18,
@@ -64,6 +79,11 @@
   "evaluation": {
     "every_updates": 10,
     "num_eval_tasks": 48,
-    "delay_sweep": [0.0, 0.2, 0.4, 0.6]
+    "delay_sweep": [
+      0.0,
+      0.2,
+      0.4,
+      0.6
+    ]
   }
 }

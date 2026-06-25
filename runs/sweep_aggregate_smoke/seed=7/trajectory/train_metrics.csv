@@ -1,0 +1,2 @@
+update,kernel,num_steps,num_events,num_assignments,avg_group_return,positive_credit_frac,credit_mass_on_causal_steps,policy_loss,entropy
+1,trajectory,278,286,228,-13.9,0.0,0.0,-0.01340919726598011,2.543363715226153

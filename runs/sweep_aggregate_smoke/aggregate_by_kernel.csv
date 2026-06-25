@@ -1,0 +1,3 @@
+kernel,n,success_rate_mean,success_rate_std,avg_env_return_mean,avg_env_return_std,credit_mass_on_causal_steps_mean,credit_mass_on_causal_steps_std,positive_credit_frac_mean,positive_credit_frac_std,entropy_mean,entropy_std
+trajectory,1,0.0,0.0,-0.22770833333333337,0.0,0.0,0.0,0.0,0.0,2.543363715226153,0.0
+evidence,1,0.0,0.0,-0.2104166666666667,0.0,0.8893335042855475,0.0,0.03597122302158273,0.0,2.554905713155763,0.0
