@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from ecr_grpo.attribution import event_source_time
 from ecr_grpo.credit_kernels import CreditKernel
 from ecr_grpo.types import AsyncEvent, CreditAssignment, StepRecord
@@ -33,6 +35,8 @@ class PendingStepBuffer:
         weights = kernel.weights(event, steps)
         assignments: list[CreditAssignment] = []
         reasons = getattr(kernel, "last_reasons", None)
+        route = str(getattr(kernel, "last_category", "unknown"))
+        weight_stats = self._weight_stats(weights)
         for idx, (step, weight) in enumerate(zip(steps, weights)):
             if weight == 0.0:
                 continue
@@ -50,9 +54,37 @@ class PendingStepBuffer:
                     kernel_weight=weight,
                     assigned_credit=credit,
                     reason=reason,
+                    route=route,
+                    weight_entropy=weight_stats["weight_entropy"],
+                    effective_steps=weight_stats["effective_steps"],
+                    top_weight=weight_stats["top_weight"],
+                    top_margin=weight_stats["top_margin"],
                 )
             )
         return assignments
+
+    def _weight_stats(self, weights: list[float]) -> dict[str, float]:
+        probs = [max(0.0, weight) for weight in weights]
+        total = sum(probs)
+        if total <= 1e-12:
+            return {
+                "weight_entropy": 0.0,
+                "effective_steps": 0.0,
+                "top_weight": 0.0,
+                "top_margin": 0.0,
+            }
+        probs = [weight / total for weight in probs]
+        entropy = -sum(prob * math.log(max(prob, 1e-12)) for prob in probs)
+        normalized_entropy = entropy / math.log(len(probs)) if len(probs) > 1 else 0.0
+        ranked = sorted(probs, reverse=True)
+        top_weight = ranked[0]
+        second_weight = ranked[1] if len(ranked) > 1 else 0.0
+        return {
+            "weight_entropy": normalized_entropy,
+            "effective_steps": math.exp(entropy),
+            "top_weight": top_weight,
+            "top_margin": top_weight - second_weight,
+        }
 
     def finalize_ready(self, current_time: int) -> list[StepRecord]:
         ready: list[StepRecord] = []

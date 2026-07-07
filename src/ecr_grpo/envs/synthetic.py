@@ -159,7 +159,12 @@ class SyntheticLongHorizonEnv:
         )
         event.metadata.update(
             {
-                "tags": [target_action, "non_local_support"],
+                "credit_route": "non_local",
+                "tags": ["non_local_support"],
+            }
+        )
+        event.diagnostic_metadata.update(
+            {
                 "target_action": target_action,
                 "target_lag": lag,
                 "generated_at_step": current_step_id,

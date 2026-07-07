@@ -6,7 +6,7 @@
 
 ECR-GRPO 的核心思路是：将这些反馈统一建模为 asynchronous event stream，并在事件到达时对 pending buffer 中的历史 step 做 evidence-conditioned credit refill，最后把回填后的 step-level return 转换为 GRPO-compatible group-relative advantage。换句话说，ECR-GRPO 试图将 delayed asynchronous feedback 转化为可解释、可训练的 step-level policy gradients。
 
-当前项目已经完成 synthetic controlled benchmark、异步扰动 wrapper、pending step buffer、多种 credit refill kernel、no-oracle evidence attribution、credit diagnostic、主实验/鲁棒性/消融结果汇总脚本，以及 HF/LoRA 和 ALFWorld adapter 的初步接口。阶段 A 的 synthetic 结果已经能支持机制有效性；后续需要进一步完成小模型 HF/LoRA smoke，并逐步接入真实 agent benchmark 验证 external validity。
+当前项目已经完成 synthetic controlled benchmark、异步扰动 wrapper、pending step buffer、多种 credit refill kernel、no-oracle evidence attribution、credit diagnostic、主实验/鲁棒性/消融结果汇总脚本，以及 HF/LoRA 和 ALFWorld adapter 的初步接口。阶段 A 的 tabular synthetic 结果已经能支持机制有效性；阶段 B 的 HF/LoRA synthetic 结果进一步显示，单纯把 Evidence Refill 用到所有反馈会削弱局部学习稳定性，而事件路由式的 Gated Evidence 能在保持 Recency 级别成功率的同时显著改善 non-local credit attribution。后续需要完成 candidate-action scoring 版本的 HF 对照，并逐步接入真实 agent benchmark 验证 external validity。
 
 ## 1. 研究问题
 
@@ -74,12 +74,13 @@ ECR-GRPO 的区别在于：
 - `SyntheticLongHorizonEnv`：可控长任务 synthetic 环境，支持多步 action sequence、partial reward、terminal success/failure 和 non-local delayed feedback；
 - `AsyncEnvWrapper`：支持 reward delay、terminal reward delay、timeout、interruption、missing reward，以及 no-oracle event link removal；
 - `PendingStepBuffer`：维护尚未完成信用分配的历史 step，使后续事件可以回填到已经发生过的 step；
-- `CreditKernel` 系列：实现 `trajectory`、`uniform`、`recency`、`dependency`、`evidence` 五种 credit refill 方式；
+- `CreditKernel` 系列：实现 `trajectory`、`uniform`、`recency`、`dependency`、`evidence` 和 `gated_evidence` 等 credit refill 方式；
 - `EvidenceKernel`：主方法，不依赖精确 `related_step_id`，而是使用时间、文本、tag、tool/subgoal 等弱证据做 attribution；
+- `GatedEvidenceKernel`：阶段 B 中新增的事件路由方案，将普通 local partial reward 保持为 recency-like sharp credit，将 non-local support event 交给 evidence attribution；
 - `compute_group_advantages`：将回填后的 step return 转成 GRPO-style group-relative advantage；
 - 训练、评估、baseline 对比、参数 sweep、credit analysis runner 已经跑通；
 - 阶段 A 已在服务器完成多 seed synthetic 实验，并通过 `scripts/summarize_results.py` 生成论文表格；
-- HF LoRA policy 和 ALFWorld adapter 已有初步接口，可作为后续真实 LLM agent benchmark 接入基础。
+- HF LoRA policy 已从 generate-then-parse 路径扩展到 candidate-action scoring 路径；ALFWorld adapter 已有初步接口，可作为后续真实 LLM agent benchmark 接入基础。
 
 ## 5. 阶段性实验结果
 
@@ -120,9 +121,68 @@ Uniform       0.188            0.166              0.441
 
 消融结果也提示一个重要现象：性能指标和 attribution 指标可能分化。例如某些变体在 success 上表现不差，但 `argmax_target_rate` 明显下降。因此后续论文中不能只报告 success rate，必须同时报告 credit diagnostic，才能证明方法确实改善了信用分配机制。
 
+### 5.4 阶段 B：HF/LoRA synthetic fair comparison
+
+阶段 B 的目标是验证 ECR-GRPO 是否能从 tabular policy 迁移到小模型 HF/LoRA policy training loop。初始实验发现，pure Evidence 虽然能改善 non-local target attribution，但在 HF synthetic 中会削弱局部 next-action learning；Recency 则训练稳定，但 delayed non-local reward 明显偏向 recent step。基于这个现象，项目新增 `gated_evidence`：local feedback 使用 recency-like 分配，non-local support feedback 使用 evidence attribution。
+
+在公平设置下，三组方法使用相同任务、相同 `lag=2`、相同 non-local reward、相同 seed 和训练预算，只改变 credit kernel。聚合结果如下：
+
+```text
+Method     Final Success   Logged Mean Success   Target Weight   Recent Weight   Argmax Target
+Recency       0.917              0.587              0.195           0.307           0.000
+Evidence      0.889              0.540              0.623           0.095           1.000
+Gated         0.917              0.658              0.755           0.080           1.000
+```
+
+这张表是阶段 B 当前最关键的结果。它说明：
+
+- Recency 的最终成功率高，但 non-local attribution 错误，最大 credit 从不给真实 target step；
+- pure Evidence 的 attribution 明显好于 Recency，但 final success 和 learning AUC 都更低；
+- Gated Evidence 达到 Recency 级别的 final success，同时 logged mean success 最高，并把约 `75.5%` 的 non-local credit mass 分配给真实 target step，将 recent-step bias 降到约 `8.0%`。
+
+因此，阶段 B 的核心发现不是“pure Evidence 直接优于 Recency”，而是：**HF/LoRA 阶段需要 event-gated credit routing；local feedback 不应被 Evidence 摊薄，non-local feedback 才应由 Evidence 处理。**
+
+### 5.5 Lag sweep 观察
+
+为了检查结论是否依赖单一 delayed lag，进一步做了 `lag=1` 和 `lag=3` 对照。
+
+`lag=1` 结果：
+
+```text
+Method     Final Success   Logged Mean Success   Target Weight   Recent Weight   Argmax Target
+Recency       0.903              0.654              0.308           0.382           0.000
+Evidence      0.903              0.633              0.661           0.118           1.000
+Gated         0.854              0.607              0.759           0.103           1.000
+```
+
+需要注意，当前 `lag=1` 中 Gated 只有 `num_seeds=1`，因此只能作为辅助观察。短 lag 下 target step 靠近 recent step，Recency 是强 baseline；Gated 仍保持最强 attribution，但 success/AUC 不一定更高。
+
+`lag=3` 结果：
+
+```text
+Method     Final Success   Logged Mean Success   Target Weight   Recent Weight   Argmax Target
+Recency       0.917              0.625              0.187           0.267           0.000
+Evidence      0.896              0.556              0.602           0.093           1.000
+Gated         0.917              0.631              0.755           0.087           1.000
+```
+
+`lag=3` 更清楚地支持主结论：随着 target 更非局部，Recency 仍能靠 local learning 取得较高 success，但 attribution 仍偏向 recent step；Gated 保持 Recency-level success，同时 attribution 明显最好。
+
+### 5.6 Gated ablation 观察
+
+当前消融表包含 `gated_full` 三个 seed，以及 `gated_no_evidence` 一个 seed。已有结果如下：
+
+```text
+Variant              Final Success   Logged Mean Success   Target Weight   Recent Weight   Argmax Target
+Gated Full              0.917              0.671              0.753           0.080           1.000
+Gated No Evidence       0.875              0.664              0.197           0.313           0.000
+```
+
+这个对照已经显示出很强趋势：去掉 non-local evidence component 后，方法退化为 Recency-like attribution，target weight 从约 `0.753` 降到约 `0.197`，recent weight 从约 `0.080` 升到约 `0.313`，argmax target 从 `1.0` 降到 `0.0`。但由于 `gated_no_evidence` 目前只有一个 seed，正式论文表格中仍需要补齐剩余 seed。
+
 ## 6. 当前可以支持的结论
 
-基于阶段 A 的结果，目前可以较稳妥地支持以下结论：
+基于阶段 A 和阶段 B 的结果，目前可以较稳妥地支持以下结论：
 
 1. ECR-GRPO 的 event stream、pending buffer、credit refill 和 GRPO-style advantage 闭环已经跑通。
 2. 在长任务异步反馈设置下，trajectory-level GRPO 明显不足。
@@ -130,6 +190,8 @@ Uniform       0.188            0.166              0.441
 4. 在 non-local delayed feedback 中，Recency Refill 存在明显 recent-step bias。
 5. Evidence Refill 能利用弱证据把 delayed reward 分配给更相关的历史 step。
 6. Credit diagnostic 证明提升来自更合理的 credit assignment，而不仅是随机训练波动。
+7. 在 HF/LoRA synthetic 中，pure Evidence 直接接管所有反馈并不是最佳方案，因为它会摊薄 local partial reward 的训练信号。
+8. Gated Evidence 通过事件路由同时保留 Recency 的局部学习稳定性和 Evidence 的 non-local attribution 能力：在 fair `lag=2` 和 `lag=3` 设置下，它达到 Recency-level final success，同时显著降低 recent-step bias。
 
 需要注意的是，当前 synthetic controlled diagnostic 证明的是机制有效性和可解释性，还不能单独证明真实 LLM agent benchmark 上的最终效果。真实 benchmark 仍需要作为后续 external validity 单独验证。
 
@@ -141,7 +203,9 @@ Uniform       0.188            0.166              0.441
 - synthetic diagnostic 不能替代真实 agent benchmark；
 - pending window 可能漏掉特别长延迟事件；
 - timeout / interruption penalty 目前仍较简单，后续需要 completion-aware penalty；
-- HF/LoRA policy 仍处于 smoke test 阶段；
+- HF/LoRA policy 仍处于 smoke test 阶段，旧实验中的 entropy 为 `0.0`，说明 generate-then-parse 路径并不是真正的离散 action distribution RL；
+- candidate-action scoring policy 已经实现，但仍需要完成小规模三方对照，确认 entropy 非零且 Gated 结论保持；
+- `lag=1` 的 Gated 结果和 `gated_no_evidence` 消融目前 seed 不完整，需要补齐后才能作为正式论文主表；
 - ALFWorld 等真实 benchmark adapter 虽有初步接口，但还需要多 seed、同预算、同扰动协议下的正式对比。
 
 这些问题不影响阶段 A 的机制结论，但需要在论文表达中避免过度外推。
@@ -161,18 +225,16 @@ Uniform       0.188            0.166              0.441
 - 根据 ablation 表写 evidence source 贡献分析；
 - 从 `credit_assignments.jsonl` 中挑选 1-2 个可解释 case study。
 
-### 阶段 B：接小模型 HF/LoRA smoke
+### 阶段 B：收口 HF/LoRA smoke
 
-目标是证明 ECR-GRPO 可以从 tabular policy 迁移到 LLM policy training loop。
+当前状态：已完成 generate-then-parse HF/LoRA synthetic fair comparison、lag sweep 和部分 gated ablation。结果显示 Gated Evidence 是比 pure Evidence 更适合 HF 阶段的 credit routing 方案。
 
-需要重点观察：
+下一步工作：
 
-- LoRA update 是否稳定；
-- logprob 是否正常；
-- advantage 是否正常；
-- loss / entropy / ratio 等训练统计是否稳定；
-- 不同 kernel 是否仍产生差异；
-- 小规模 synthetic text task 上是否保持 evidence 优势。
+- 补齐 `gated_no_evidence` 的剩余 seed，必要时补齐 `lag=1 / gated` 的剩余 seed；
+- 汇总 fair comparison、lag sweep、ablation 和 action-scoring 表格，形成 Stage B 论文实验包；
+- 使用 candidate-action scoring HF policy 重跑小规模 `recency / evidence / gated` 三方对照，重点检查 entropy 是否非零、success 是否稳定、Gated attribution 是否保持；
+- 若 action-scoring 版本结论保持，则将 Stage B 写成“event-gated credit routing is necessary for HF policy learning”的主要发现。
 
 ### 阶段 C：接真实 agent benchmark
 
@@ -201,4 +263,3 @@ different credit assignment method
 ## 9. 一句话总结
 
 ECR-GRPO 的核心目标是提出一种轻量、可插拔、无需精确 oracle step link 的异步信用分配机制，使现有 GRPO / StepPO 类 agentic RL 方法能够更稳定地训练长任务、延迟奖励和异步工具调用场景下的 LLM agents。
-

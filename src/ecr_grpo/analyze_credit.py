@@ -34,6 +34,53 @@ def _run_label(run_dir: Path) -> str:
     return str(run_dir)
 
 
+def _metadata_tokens(value: Any) -> set[str]:
+    if value is None:
+        return set()
+    if isinstance(value, dict):
+        tokens: set[str] = set()
+        for item in value.values():
+            tokens.update(_metadata_tokens(item))
+        return tokens
+    if isinstance(value, (list, tuple, set)):
+        tokens: set[str] = set()
+        for item in value:
+            tokens.update(_metadata_tokens(item))
+        return tokens
+    return {str(value).lower()}
+
+
+def is_non_local_event(event: dict[str, Any]) -> bool:
+    metadata = event.get("metadata", {})
+    diagnostic_metadata = event.get("diagnostic_metadata", {})
+    delta = str(event.get("observation_delta", "")).lower()
+    tags = _metadata_tokens(metadata.get("tags", metadata.get("evidence_tags", [])))
+    return (
+        metadata.get("credit_route") == "non_local"
+        or "non_local_support" in delta
+        or "non_local_support" in tags
+        or diagnostic_metadata.get("target_action") is not None
+        or diagnostic_metadata.get("target_lag") is not None
+    )
+
+
+def event_target_action(event: dict[str, Any]) -> str | None:
+    metadata = event.get("metadata", {})
+    diagnostic_metadata = event.get("diagnostic_metadata", {})
+    target = diagnostic_metadata.get("target_action")
+    if target is not None:
+        return str(target)
+    target = metadata.get("target_action")
+    if target is not None:
+        return str(target)
+    delta = str(event.get("observation_delta", ""))
+    marker = "non_local_support:"
+    if marker in delta:
+        rest = delta.split(marker, 1)[1]
+        return rest.split(":", 1)[0]
+    return None
+
+
 def analyze_run(run_dir: str | Path) -> dict[str, Any]:
     root = Path(run_dir)
     events = _load_jsonl(root / "train_events.jsonl")
@@ -52,20 +99,24 @@ def analyze_run(run_dir: str | Path) -> dict[str, Any]:
     non_local_events = [
         event
         for event in events
-        if "non_local_support" in str(event.get("observation_delta", ""))
+        if is_non_local_event(event)
     ]
 
     target_weight_sum = 0.0
     recent_weight_sum = 0.0
     target_credit_sum = 0.0
     total_credit_sum = 0.0
+    weight_entropy_sum = 0.0
+    effective_steps_sum = 0.0
+    top_weight_sum = 0.0
+    top_margin_sum = 0.0
     argmax_target = 0
     target_top3 = 0
     analyzed = 0
 
     for event in non_local_events:
         event_id = str(event["event_id"])
-        target_action = event.get("metadata", {}).get("target_action")
+        target_action = event_target_action(event)
         event_assignments = assignments_by_event.get(event_id, [])
         if not target_action or not event_assignments:
             continue
@@ -80,6 +131,11 @@ def analyze_run(run_dir: str | Path) -> dict[str, Any]:
             continue
 
         analyzed += 1
+        first_assignment = event_assignments[0]
+        weight_entropy_sum += float(first_assignment.get("weight_entropy", 0.0))
+        effective_steps_sum += float(first_assignment.get("effective_steps", 0.0))
+        top_weight_sum += float(first_assignment.get("top_weight", 0.0))
+        top_margin_sum += float(first_assignment.get("top_margin", 0.0))
         ranked = sorted(enriched, key=lambda item: float(item[0]["kernel_weight"]), reverse=True)
         top_assignment, top_step = ranked[0]
         if top_step.get("action") == target_action:
@@ -108,6 +164,10 @@ def analyze_run(run_dir: str | Path) -> dict[str, Any]:
         "target_weight_mean": target_weight_sum / denom,
         "recent_weight_mean": recent_weight_sum / denom,
         "target_credit_fraction": target_credit_sum / total_credit_abs,
+        "weight_entropy_mean": weight_entropy_sum / denom,
+        "effective_steps_mean": effective_steps_sum / denom,
+        "top_weight_mean": top_weight_sum / denom,
+        "top_margin_mean": top_margin_sum / denom,
         "argmax_target_rate": argmax_target / denom,
         "target_top3_rate": target_top3 / denom,
     }

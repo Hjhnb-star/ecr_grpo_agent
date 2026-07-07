@@ -42,6 +42,7 @@ class ECRGRPOTrainer:
         group_size = int(train_cfg.get("group_size", 4))
         lr = float(train_cfg.get("learning_rate", 0.1))
         max_pending_age = int(self.config.get("credit", {}).get("max_pending_age", 8))
+        advantage_mode = str(train_cfg.get("advantage_mode", self.config.get("credit", {}).get("advantage_mode", "step")))
         eval_every = int(eval_cfg.get("every_updates", 10))
         checkpoint_every = int(train_cfg.get("checkpoint_every", 0))
 
@@ -73,18 +74,19 @@ class ECRGRPOTrainer:
                 for assignment in group.assignments:
                     append_jsonl(self.output_dir / "credit_assignments.jsonl", assignment)
 
-            compute_group_advantages(finalized_steps)
+            compute_group_advantages(finalized_steps, mode=advantage_mode)
             stats = self.policy.update(finalized_steps, lr=lr)
             positive_credit = sum(1 for s in finalized_steps if s.return_estimate > 0)
             causal_credit_mass = sum(
                 max(0.0, s.return_estimate)
                 for s in finalized_steps
-                if s.metadata.get("causal_action")
+                if s.diagnostic_metadata.get("causal_action")
             )
             total_positive_mass = sum(max(0.0, s.return_estimate) for s in finalized_steps)
             row = {
                 "update": update_idx,
                 "kernel": self.kernel.name,
+                "advantage_mode": advantage_mode,
                 "num_steps": len(finalized_steps),
                 "num_events": event_count,
                 "num_assignments": assignment_count,

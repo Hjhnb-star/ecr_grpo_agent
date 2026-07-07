@@ -36,6 +36,7 @@ class StepRecord:
     filled_credit: float = 0.0
     advantage: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
+    diagnostic_metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def key(self) -> tuple[str, str, int]:
@@ -60,6 +61,7 @@ class AsyncEvent:
     observation_delta: str | None = None
     terminal: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    diagnostic_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -70,6 +72,11 @@ class CreditAssignment:
     kernel_weight: float
     assigned_credit: float
     reason: str
+    route: str = "unknown"
+    weight_entropy: float = 0.0
+    effective_steps: float = 1.0
+    top_weight: float = 0.0
+    top_margin: float = 0.0
 
 
 @dataclass

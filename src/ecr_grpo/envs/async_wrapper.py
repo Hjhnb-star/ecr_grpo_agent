@@ -7,6 +7,20 @@ from dataclasses import dataclass, field
 from ecr_grpo.types import AsyncEvent
 
 
+DIAGNOSTIC_METADATA_KEYS = {
+    "causal_action",
+    "expected_action",
+    "expected_subgoal",
+    "generated_at_step",
+    "label",
+    "labels",
+    "target_action",
+    "target_lag",
+    "true_action",
+    "true_step_id",
+}
+
+
 @dataclass(order=True)
 class ScheduledEvent:
     due_time: int
@@ -110,12 +124,20 @@ class AsyncEnvWrapper:
         self.counter += 1
         due = self.current_time + max(0, delay)
         use_oracle_links = bool(self.config.get("use_oracle_event_links", True))
-        metadata = {**event.metadata, "source_time": event.event_time, "delay": delay}
+        metadata, diagnostic_metadata = self._split_event_metadata(event)
+        metadata = {**metadata, "source_time": event.event_time, "delay": delay}
         if use_oracle_links:
             if event.related_tool is not None:
                 metadata.setdefault("tool", event.related_tool)
             if event.related_subgoal is not None:
                 metadata.setdefault("subgoal", event.related_subgoal)
+        else:
+            if event.related_step_id is not None:
+                diagnostic_metadata.setdefault("related_step_id", event.related_step_id)
+            if event.related_tool is not None:
+                diagnostic_metadata.setdefault("related_tool", event.related_tool)
+            if event.related_subgoal is not None:
+                diagnostic_metadata.setdefault("related_subgoal", event.related_subgoal)
         delayed = AsyncEvent(
             task_id=event.task_id,
             episode_id=event.episode_id,
@@ -129,8 +151,20 @@ class AsyncEnvWrapper:
             observation_delta=event.observation_delta,
             terminal=event.terminal,
             metadata=metadata,
+            diagnostic_metadata=diagnostic_metadata,
         )
         heapq.heappush(self.queue, ScheduledEvent(due, self.counter, delayed))
+
+    def _split_event_metadata(self, event: AsyncEvent) -> tuple[dict, dict]:
+        public_metadata = dict(event.metadata)
+        diagnostic_metadata = dict(event.diagnostic_metadata)
+        if not bool(self.config.get("strip_diagnostic_metadata", True)):
+            return public_metadata, diagnostic_metadata
+
+        for key in list(public_metadata):
+            if key in DIAGNOSTIC_METADATA_KEYS or key.startswith(("target_", "oracle_", "true_")):
+                diagnostic_metadata.setdefault(key, public_metadata.pop(key))
+        return public_metadata, diagnostic_metadata
 
     def _event_delay(self, event: AsyncEvent) -> int:
         if event.terminal:

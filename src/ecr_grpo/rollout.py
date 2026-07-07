@@ -53,10 +53,12 @@ def collect_rollout_group(
                 immediate_reward=0.0,
                 metadata={
                     "action": action.text,
+                    "tags": info.get("public_tags", [action.text]),
+                },
+                diagnostic_metadata={
                     "causal_action": info.get("causal_action", False),
                     "expected_action": info.get("expected_action"),
-                    "subgoal": info.get("subgoal_id") or info.get("expected_action"),
-                    "tags": info.get("tags", []),
+                    "raw_tags": info.get("tags", []),
                 },
             )
             buffer.add_step(step)

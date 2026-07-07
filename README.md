@@ -19,9 +19,10 @@ ALFWorld, ScienceWorld, WebShop, or tool-orchestration tasks.
   - recency
   - dependency-aware
   - evidence attribution without oracle step links
+  - gated evidence for routing local feedback to recency and non-local feedback to evidence
 - GRPO-style group-relative step advantages.
 - Lightweight tabular text-action policy for smoke experiments.
-- Optional HuggingFace causal-LM policy with LoRA and a compact clipped GRPO update.
+- Optional HuggingFace causal-LM policy with LoRA, candidate-action scoring, and a compact clipped GRPO update.
 - Optional ALFWorld environment adapter.
 - Train/eval CLI.
 - Unit tests.
@@ -66,6 +67,11 @@ metadata tags. This is the recommended path for arguing that ECR-GRPO is a gener
 assignment algorithm rather than a benchmark-specific rule system. The older `dependency`
 kernel is best treated as an oracle/upper-bound baseline when a benchmark exposes exact links.
 
+For HF/LoRA experiments where local next-action learning can dominate, use
+`"kernel": "gated_evidence"` to keep ordinary partial rewards sharp while still applying
+evidence attribution to `non_local_support` events. The router keeps the same `AsyncEvent`
+interface and classifies events from `event_type`, `observation_delta`, and metadata tags.
+
 ## HuggingFace + LoRA Placeholder
 
 Install optional dependencies:
@@ -86,6 +92,13 @@ Then run:
 $env:PYTHONPATH = "$PWD\src"
 python -m ecr_grpo.trainer --config configs\hf_lora_synthetic_placeholder.json
 ```
+
+HF policies default to discrete candidate-action scoring: each available action is
+scored as `log p(action | prompt)`, normalized into an action distribution, sampled
+during training, and reused for clipped updates and entropy logging. To temporarily
+use the older free-generation path, set `"action_selection": "generate"` under
+`policy`. Candidate scoring can be chunked with `"action_score_batch_size"` to reduce
+GPU memory peaks.
 
 ## ALFWorld Placeholder
 
