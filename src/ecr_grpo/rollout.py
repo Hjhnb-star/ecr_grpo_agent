@@ -32,7 +32,8 @@ def collect_rollout_group(
         episodes.append(episode_id)
 
         for step_id in range(max_steps):
-            action = policy.act(obs, action_space=list(env.action_space), greedy=greedy)
+            action_space = list(env.action_space)
+            action = policy.act(obs, action_space=action_space, greedy=greedy)
             obs_key = observation_key(obs)
             next_obs, reward, done, info = env.step(action.text)
             step = StepRecord(
@@ -45,7 +46,7 @@ def collect_rollout_group(
                 observation_key=obs_key,
                 action=action.text,
                 old_logprob=action.old_logprob,
-                action_space=list(env.action_space),
+                action_space=action_space,
                 prompt_ids=action.prompt_ids,
                 response_ids=action.response_ids,
                 tool_name=info.get("tool_name") or info.get("called_tool"),

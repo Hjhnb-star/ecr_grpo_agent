@@ -1,0 +1,102 @@
+{
+  "experiment_name": "alfworld_gated_smoke",
+  "output_dir": "runs/alfworld_gated_smoke",
+  "seed": 7,
+  "environment": {
+    "name": "alfworld",
+    "alfworld_config": "REPLACE_WITH_ALFWORLD_CONFIG.yaml",
+    "split": "eval_out_of_distribution",
+    "reuse_env": true,
+    "num_tasks": 8,
+    "max_steps": 30,
+    "shaping": {
+      "enabled": true,
+      "valid_action_reward": 0.02,
+      "observation_change_reward": 0.03,
+      "new_state_reward": 0.02,
+      "stagnation_penalty": -0.02,
+      "repeat_action_penalty": -0.03,
+      "invalid_action_penalty": -0.05
+    },
+    "action_space": [
+      "look",
+      "inventory",
+      "go north",
+      "go south",
+      "go east",
+      "go west",
+      "open door",
+      "close door",
+      "take object",
+      "put object in/on receptacle"
+    ]
+  },
+  "async": {
+    "enabled": true,
+    "delay_prob": 0.3,
+    "max_delay_steps": 3,
+    "timeout_prob": 0.03,
+    "interruption_prob": 0.0,
+    "missing_reward_prob": 0.05,
+    "terminal_reward_delay": 2,
+    "use_oracle_event_links": false,
+    "strip_diagnostic_metadata": true
+  },
+  "credit": {
+    "kernel": "gated_evidence",
+    "lambda": 0.25,
+    "local_lambda": 1.0,
+    "max_pending_age": 16,
+    "timeout_penalty": -0.2,
+    "temporal_weight": 0.5,
+    "exact_step_weight": 0.0,
+    "tool_weight": 0.5,
+    "subgoal_weight": 0.5,
+    "tag_weight": 2.0,
+    "text_weight": 1.0,
+    "evidence_top_k": 5,
+    "evidence_temperature": 0.8,
+    "local_recency_weight": 1.0,
+    "local_evidence_weight": 0.0,
+    "nonlocal_evidence_weight": 0.85,
+    "nonlocal_recency_weight": 0.15,
+    "terminal_success_uniform_weight": 0.4,
+    "terminal_success_evidence_weight": 0.4,
+    "terminal_success_recency_weight": 0.2,
+    "terminal_failure_recency_weight": 0.7,
+    "terminal_failure_evidence_weight": 0.3,
+    "ambiguous_evidence_weight": 0.5,
+    "ambiguous_recency_weight": 0.5
+  },
+  "policy": {
+    "kind": "hf_lora",
+    "model_id": "REPLACE_WITH_HF_MODEL_ID_OR_LOCAL_PATH",
+    "adapter_path": null,
+    "use_lora": true,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "device": null,
+    "max_new_tokens": 16,
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "action_selection": "score",
+    "action_score_batch_size": 2,
+    "update_score_mode": "selected"
+  },
+  "training": {
+    "num_updates": 10,
+    "tasks_per_update": 1,
+    "group_size": 1,
+    "learning_rate": 5.0e-6,
+    "clip_eps": 0.2,
+    "grad_accum_steps": 1,
+    "checkpoint_every": 5,
+    "advantage_mode": "step"
+  },
+  "evaluation": {
+    "every_updates": 5,
+    "num_eval_tasks": 8,
+    "delay_sweep": [0.0, 0.3]
+  }
+}

@@ -90,4 +90,20 @@ def normalize_stage_b_config(
         policy["action_score_batch_size"] = int(policy.get("action_score_batch_size", 2))
         if policy["action_score_batch_size"] > 2:
             policy["action_score_batch_size"] = 2
+        policy["temperature"] = max(float(policy.get("temperature", 1.0)), 1.0)
+        policy["action_score_normalization"] = str(policy.get("action_score_normalization", "mean"))
+        policy["action_score_calibration"] = str(policy.get("action_score_calibration", "pmi"))
+        policy["use_chat_template"] = bool(policy.get("use_chat_template", True))
         policy["update_score_mode"] = str(policy.get("update_score_mode", "selected"))
+
+        training = config.setdefault("training", {})
+        training["learning_rate"] = float(training.get("stage_b_learning_rate", 1e-5))
+        training["num_updates"] = max(int(training.get("num_updates", 60)), 60)
+        training["tasks_per_update"] = max(int(training.get("tasks_per_update", 4)), 4)
+        training["group_size"] = max(int(training.get("group_size", 2)), 2)
+        training["grad_accum_steps"] = max(int(training.get("grad_accum_steps", 4)), 4)
+        training["max_grad_norm"] = float(training.get("max_grad_norm", 1.0))
+
+        evaluation = config.setdefault("evaluation", {})
+        evaluation["trace_num_tasks"] = int(evaluation.get("trace_num_tasks", 4))
+        evaluation["trace_top_k"] = int(evaluation.get("trace_top_k", 3))

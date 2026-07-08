@@ -81,6 +81,9 @@ def summarize_run(run_dir: Path) -> dict[str, Any]:
         "final_success": numeric(final_eval, "success_rate"),
         "peak_success": max(success_values),
         "logged_mean_success": mean(success_values),
+        "final_action_accuracy": numeric(final_eval, "action_accuracy"),
+        "final_avg_progress": numeric(final_eval, "avg_progress"),
+        "final_avg_progress_fraction": numeric(final_eval, "avg_progress_fraction"),
         "final_avg_env_return": numeric(final_eval, "avg_env_return"),
         "final_credit_causal": numeric(final_train, "credit_mass_on_causal_steps"),
         "final_entropy": numeric(final_train, "entropy"),
@@ -107,6 +110,9 @@ def aggregate(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "final_success",
         "peak_success",
         "logged_mean_success",
+        "final_action_accuracy",
+        "final_avg_progress",
+        "final_avg_progress_fraction",
         "final_avg_env_return",
         "final_credit_causal",
         "final_entropy",
@@ -155,6 +161,8 @@ def main() -> None:
     for row in agg:
         print(
             f"{row['kernel']} final={row['final_success_mean']:.3f} "
+            f"acc={row['final_action_accuracy_mean']:.3f} "
+            f"progress={row['final_avg_progress_fraction_mean']:.3f} "
             f"auc={row['logged_mean_success_mean']:.3f} "
             f"target_w={row['target_weight_mean_mean']:.3f} "
             f"recent_w={row['recent_weight_mean_mean']:.3f} "

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from ecr_grpo.advantages import compute_group_advantages
 from ecr_grpo.analyze_credit import event_target_action, is_non_local_event
@@ -14,7 +15,10 @@ from ecr_grpo.credit_kernels import (
     classify_credit_event,
 )
 from ecr_grpo.envs.async_wrapper import AsyncEnvWrapper
-from ecr_grpo.types import AsyncEvent, StepRecord
+from ecr_grpo.envs.alfworld_wrapper import ALFWorldEnv
+from ecr_grpo.rollout import collect_rollout_group
+from ecr_grpo.run_alfworld import build_run_config, validate_config
+from ecr_grpo.types import AsyncEvent, PolicyAction, StepRecord
 
 
 def step(step_id: int, action: str = "a", subgoal: str = "a") -> StepRecord:
@@ -229,6 +233,143 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(steps[0].advantage, steps[1].advantage)
         self.assertAlmostEqual(steps[2].advantage, steps[3].advantage)
         self.assertGreater(steps[0].advantage, steps[2].advantage)
+
+    def test_alfworld_adapter_handles_batched_infos(self) -> None:
+        class MockALFWorldRawEnv:
+            def reset(self):
+                return ["You are in a room."], {
+                    "admissible_commands": [["look", "inventory"]],
+                    "extra.gamefile": ["/tmp/pick_and_place/game.ulx"],
+                    "won": [False],
+                }
+
+            def step(self, actions):
+                self.last_actions = actions
+                return ["You are still in a room."], [0.0], [False], {
+                    "admissible_commands": [["look", "inventory"]],
+                    "extra.gamefile": ["/tmp/pick_and_place/game.ulx"],
+                    "won": [False],
+                }
+
+        env = ALFWorldEnv(
+            alfworld_config="mock.yaml",
+            split="eval_out_of_distribution",
+            fallback_action_space=["look"],
+            raw_env=MockALFWorldRawEnv(),
+        )
+        obs = env.reset(task_id="alfworld_0000", episode_id="ep")
+        self.assertIn("Admissible actions", obs)
+        self.assertEqual(env.action_space, ["look", "inventory"])
+
+        _, reward, done, info = env.step("look")
+        self.assertFalse(done)
+        self.assertFalse(info["success"])
+        self.assertGreater(reward, 0.0)
+        self.assertEqual(info["tool_name"], "look")
+        self.assertIn("look", info["public_tags"])
+        self.assertTrue(info["events"])
+        self.assertIn("look", info["events"][0].metadata["tags"])
+
+    def test_alfworld_adapter_reads_terminal_success(self) -> None:
+        class MockDoneRawEnv:
+            def reset(self):
+                return ["start"], {"admissible_commands": [["look"]], "gamefile": ["game.ulx"]}
+
+            def step(self, actions):
+                return ["done"], [1.0], [True], {
+                    "admissible_commands": [["look"]],
+                    "gamefile": ["game.ulx"],
+                    "won": [True],
+                }
+
+        env = ALFWorldEnv(
+            alfworld_config="mock.yaml",
+            split="eval_out_of_distribution",
+            fallback_action_space=["look"],
+            raw_env=MockDoneRawEnv(),
+        )
+        env.reset(task_id="alfworld_0000", episode_id="ep")
+        _, _, done, info = env.step("look")
+        self.assertTrue(done)
+        self.assertTrue(info["success"])
+        self.assertEqual(info["events"][-1].event_type, "terminal_success")
+
+    def test_run_alfworld_builds_no_oracle_fair_configs(self) -> None:
+        base = {
+            "environment": {
+                "name": "alfworld",
+                "alfworld_config": "C:/alfworld/base_config.yaml",
+                "max_steps": 5,
+                "action_space": ["look"],
+            },
+            "async": {"delay_prob": 0.1},
+            "credit": {"kernel": "gated_evidence", "max_pending_age": 4},
+            "policy": {"kind": "hf_lora", "model_id": "Qwen/Qwen2.5-1.5B-Instruct"},
+            "training": {"group_size": 1},
+        }
+        gated = build_run_config(base, kernel="gated", seed=7, output_root=Path("runs/alf"))
+        grpo = build_run_config(base, kernel="grpo", seed=7, output_root=Path("runs/alf"))
+
+        self.assertEqual(gated["credit"]["kernel"], "gated_evidence")
+        self.assertEqual(gated["training"]["advantage_mode"], "step")
+        self.assertFalse(gated["async"]["use_oracle_event_links"])
+        self.assertEqual(grpo["credit"]["kernel"], "trajectory_uniform")
+        self.assertEqual(grpo["training"]["advantage_mode"], "trajectory")
+        self.assertEqual(validate_config(gated, require_files=False), [])
+
+    def test_rollout_records_pre_step_action_space(self) -> None:
+        class DynamicActionEnv:
+            def __init__(self) -> None:
+                self.current_time = 0
+                self.actions = ["open door"]
+
+            @property
+            def action_space(self):
+                return self.actions
+
+            def reset(self, task_id=None, episode_id=None):
+                self.task_id = task_id
+                self.episode_id = episode_id
+                return "obs"
+
+            def step(self, action):
+                self.current_time += 1
+                self.actions = ["go north"]
+                return "next", 0.0, True, {
+                    "task_id": self.task_id,
+                    "episode_id": self.episode_id,
+                    "async_time": self.current_time,
+                    "step_id": 0,
+                    "events": [],
+                }
+
+            def pop_events(self):
+                return []
+
+            def drain_events(self):
+                return []
+
+        class RecordingPolicy:
+            def __init__(self) -> None:
+                self.seen_action_space = []
+
+            def act(self, obs, action_space=None, greedy=False):
+                self.seen_action_space = list(action_space)
+                return PolicyAction(text=action_space[0], old_logprob=-1.0)
+
+        policy = RecordingPolicy()
+        group = collect_rollout_group(
+            group_id="grp",
+            task_id="task",
+            group_size=1,
+            env_factory=DynamicActionEnv,
+            policy=policy,
+            kernel=UniformKernel(),
+            max_pending_age=4,
+            max_steps=2,
+        )
+        self.assertEqual(policy.seen_action_space, ["open door"])
+        self.assertEqual(group.steps[0].action_space, ["open door"])
 
 
 if __name__ == "__main__":

@@ -139,9 +139,13 @@ def build_policy(config: dict, action_space: list[str], seed: int = 0):
             top_p=float(policy_cfg.get("top_p", 1.0)),
             action_selection=str(policy_cfg.get("action_selection", "score")),
             action_score_batch_size=int(policy_cfg.get("action_score_batch_size", 8)),
+            action_score_normalization=str(policy_cfg.get("action_score_normalization", "mean")),
+            action_score_calibration=str(policy_cfg.get("action_score_calibration", "pmi")),
+            use_chat_template=bool(policy_cfg.get("use_chat_template", True)),
             update_score_mode=str(policy_cfg.get("update_score_mode", "selected")),
             clip_eps=float(config.get("training", {}).get("clip_eps", 0.2)),
             grad_accum_steps=int(config.get("training", {}).get("grad_accum_steps", 1)),
+            max_grad_norm=float(config.get("training", {}).get("max_grad_norm", 1.0)),
             seed=seed,
         )
     raise ValueError(f"Unknown policy kind: {kind}")

@@ -121,13 +121,21 @@ For two RTX 4090 cards, prefer:
   "policy": {
     "action_selection": "score",
     "action_score_batch_size": 2,
+    "action_score_normalization": "mean",
+    "action_score_calibration": "pmi",
+    "use_chat_template": true,
+    "temperature": 1.0,
     "update_score_mode": "selected"
   }
 }
 ```
 
-`update_score_mode="selected"` keeps candidate scoring for behavior/action sampling, but
-uses the selected action sequence for the PPO/GRPO update. This avoids retaining a full
+`action_score_normalization="mean"` removes the short-action bias from candidate scoring.
+`action_score_calibration="pmi"` subtracts each action's prompt-independent prior score,
+which prevents generic or fluent wrong actions from dominating the candidate list.
+`use_chat_template=true` uses the tokenizer's instruction-tuned chat format when available.
+`update_score_mode="selected"` keeps candidate scoring for behavior/action sampling, but uses
+the selected action sequence for the PPO/GRPO update. This avoids retaining a full
 candidate-distribution computation graph and is the recommended default before benchmark
 integration.
 
@@ -151,11 +159,29 @@ chmod +x scripts/run_stage_b_server.sh
 SETS="fair" GPU_IDS="0 1" JOBS=2 bash scripts/run_stage_b_server.sh
 ```
 
+For a quick learning-path sanity check, rerun one seed and overwrite stale results:
+
+```bash
+SEEDS="7" SETS="fair" KERNELS="gated" GPU_IDS="0" JOBS=1 OVERWRITE=1 bash scripts/run_stage_b_server.sh
+```
+
+The Stage B HF configs use `learning_rate=1e-5`, `num_updates=60`,
+`tasks_per_update=4`, `action_score_normalization="mean"`, and
+`action_score_calibration="pmi"`, `use_chat_template=true`, and
+`update_score_mode="selected"` by default. HF updates also use `max_grad_norm=1.0`.
+During evaluation the trainer writes `eval_action_rankings.jsonl` for first-step top-k
+diagnostics and `eval_traces.jsonl` for full greedy rollout traces. If success drops while
+first-step rankings remain correct, inspect `eval_traces.jsonl` to find the later step where
+the policy diverges.
+
 If memory is still tight, run one job at a time:
 
 ```bash
 SETS="fair" GPU_IDS="0" JOBS=1 bash scripts/run_stage_b_server.sh
 ```
+
+Set `OVERWRITE=1` when you want to rerun configs that already have `eval_metrics.csv`.
+Without it, completed runs are skipped.
 
 After the fair comparison is stable, run the supporting sets:
 
@@ -193,7 +219,8 @@ tests/test_core.py
 
 The fair comparison should answer two separate questions:
 
-- Learning quality: compare `final_success`, `peak_success`, and `logged_mean_success`.
+- Learning quality: compare `final_success`, `peak_success`, `logged_mean_success`,
+  `final_action_accuracy`, and `final_avg_progress_fraction`.
 - Credit quality: compare `target_weight_mean`, `recent_weight_mean`,
   `argmax_target_rate`, `target_top3_rate`, and assignment sharpness metrics such as
   `weight_entropy_mean` and `top_margin_mean`.
@@ -203,7 +230,7 @@ A useful Stage B result is not merely "better than recency". The stronger claim 
 earlier action under no-oracle metadata. That is the evidence needed before moving to
 ALFWorld or other real benchmarks.
 
-## ALFWorld Placeholder
+## ALFWorld Smoke / Fair Test
 
 Install ALFWorld separately, then install this package with optional dependencies:
 
@@ -211,19 +238,36 @@ Install ALFWorld separately, then install this package with optional dependencie
 pip install -e ".[alfworld,hf]"
 ```
 
-Edit `configs\alfworld_hf_lora_placeholder.json` and replace:
-
-```text
-REPLACE_WITH_ALFWORLD_CONFIG.yaml
-REPLACE_WITH_HF_MODEL_ID_OR_LOCAL_PATH
-```
-
-Then run:
+First generate and validate the exact ALFWorld run configs:
 
 ```powershell
 $env:PYTHONPATH = "$PWD\src"
-python -m ecr_grpo.trainer --config configs\alfworld_hf_lora_placeholder.json
+python -m ecr_grpo.run_alfworld `
+  --base-config configs\alfworld_gated_smoke.json `
+  --output-root runs\alfworld_fair `
+  --alfworld-config C:\path\to\alfworld\configs\base_config.yaml `
+  --model-id C:\path\to\Qwen2.5-1.5B-Instruct `
+  --kernels grpo recency evidence gated dependency `
+  --seeds 7 `
+  --dry-run
 ```
+
+Then remove `--dry-run` to execute the same configs:
+
+```powershell
+$env:PYTHONPATH = "$PWD\src"
+python -m ecr_grpo.run_alfworld `
+  --base-config configs\alfworld_gated_smoke.json `
+  --output-root runs\alfworld_fair `
+  --alfworld-config C:\path\to\alfworld\configs\base_config.yaml `
+  --model-id C:\path\to\Qwen2.5-1.5B-Instruct `
+  --kernels grpo recency evidence gated dependency `
+  --seeds 7
+```
+
+Generated configs are written to `runs/alfworld_fair/_generated_configs/`.
+The runner skips a run if `eval_metrics.csv` already exists unless `--overwrite` is set.
+The comparison summary is written to `runs/alfworld_fair/alfworld_summary.csv`.
 
 ## Why Tabular Policy First?
 

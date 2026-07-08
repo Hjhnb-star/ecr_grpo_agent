@@ -156,20 +156,24 @@
     "lora_dropout": 0.05,
     "device": null,
     "max_new_tokens": 8,
-    "temperature": 0.7,
+    "temperature": 1.0,
     "top_p": 1.0,
     "action_selection": "score",
     "action_score_batch_size": 2,
+    "action_score_normalization": "mean",
+    "action_score_calibration": "pmi",
+    "use_chat_template": true,
     "update_score_mode": "selected"
   },
   "training": {
-    "num_updates": 30,
-    "tasks_per_update": 2,
+    "num_updates": 60,
+    "tasks_per_update": 4,
     "group_size": 2,
-    "learning_rate": 5e-06,
+    "learning_rate": 1e-05,
     "clip_eps": 0.2,
     "grad_accum_steps": 4,
     "checkpoint_every": 10,
+    "max_grad_norm": 1.0,
     "advantage_mode": "step"
   },
   "evaluation": {
@@ -179,6 +183,8 @@
       0.0,
       0.3,
       0.6
-    ]
+    ],
+    "trace_num_tasks": 4,
+    "trace_top_k": 3
   }
 }

@@ -38,9 +38,13 @@ class HFLoraPolicy:
         top_p: float = 1.0,
         action_selection: str = "score",
         action_score_batch_size: int = 8,
+        action_score_normalization: str = "mean",
+        action_score_calibration: str = "pmi",
+        use_chat_template: bool = True,
         update_score_mode: str = "selected",
         clip_eps: float = 0.2,
         grad_accum_steps: int = 1,
+        max_grad_norm: float = 1.0,
         seed: int = 0,
     ) -> None:
         try:
@@ -61,9 +65,13 @@ class HFLoraPolicy:
         self.top_p = top_p
         self.action_selection = action_selection.lower()
         self.action_score_batch_size = max(1, action_score_batch_size)
+        self.action_score_normalization = action_score_normalization.lower()
+        self.action_score_calibration = action_score_calibration.lower()
+        self.use_chat_template = use_chat_template
         self.update_score_mode = update_score_mode.lower()
         self.clip_eps = clip_eps
         self.grad_accum_steps = max(1, grad_accum_steps)
+        self.max_grad_norm = max_grad_norm
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         if self.action_selection in {"candidate", "candidates", "scoring"}:
             self.action_selection = "score"
@@ -71,6 +79,10 @@ class HFLoraPolicy:
             raise ValueError("HF action_selection must be 'score' or 'generate'")
         if self.update_score_mode not in {"selected", "full_distribution"}:
             raise ValueError("HF update_score_mode must be 'selected' or 'full_distribution'")
+        if self.action_score_normalization not in {"sum", "mean", "sqrt"}:
+            raise ValueError("HF action_score_normalization must be 'sum', 'mean', or 'sqrt'")
+        if self.action_score_calibration not in {"none", "pmi"}:
+            raise ValueError("HF action_score_calibration must be 'none' or 'pmi'")
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         if self.tokenizer.pad_token is None and self.tokenizer.eos_token is not None:
@@ -135,7 +147,7 @@ class HFLoraPolicy:
 
         self.model.eval()
         with torch.no_grad():
-            scores = self._candidate_scores(prompt_ids, actions)
+            scores = self._candidate_scores_for_observation(observation, actions)
             log_probs, entropy = self._candidate_log_distribution_from_scores(scores)
         if greedy:
             action_idx = int(torch.argmax(log_probs).detach().cpu())
@@ -213,11 +225,15 @@ class HFLoraPolicy:
                 actions = step.action_space or self.action_space
                 if self.update_score_mode == "selected":
                     response_ids = step.response_ids or self._encode_response(step.action)
-                    new_logprob = self._sequence_logprob(prompt_ids, response_ids)
-                    entropy = self._candidate_entropy_no_grad(prompt_ids, actions)
+                    new_logprob = self._sequence_score_for_observation(
+                        step.observation,
+                        actions,
+                        response_ids,
+                    )
+                    entropy = self._candidate_entropy_no_grad(step.observation, actions)
                 else:
                     new_logprob, entropy = self._candidate_action_logprob(
-                        prompt_ids,
+                        step.observation,
                         actions,
                         step.action,
                     )
@@ -235,10 +251,12 @@ class HFLoraPolicy:
             total_ratio += float(ratio.detach().cpu())
             total_entropy += float(entropy.detach().cpu())
             if idx % self.grad_accum_steps == 0:
+                self._clip_grad_norm()
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
 
         if len(steps) % self.grad_accum_steps != 0:
+            self._clip_grad_norm()
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none=True)
 
@@ -253,8 +271,58 @@ class HFLoraPolicy:
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
 
+    def _clip_grad_norm(self) -> None:
+        if self.max_grad_norm <= 0:
+            return
+        trainable = [p for p in self.model.parameters() if p.requires_grad and p.grad is not None]
+        if trainable:
+            self.torch.nn.utils.clip_grad_norm_(trainable, self.max_grad_norm)
+
+    def rank_actions(
+        self,
+        observation: str,
+        action_space: list[str] | None = None,
+        *,
+        top_k: int = 5,
+    ) -> list[dict[str, float | int | str]]:
+        actions = action_space or self.action_space
+        self.model.eval()
+        with self.torch.no_grad():
+            scores = self._candidate_scores_for_observation(observation, actions)
+            log_probs, _ = self._candidate_log_distribution_from_scores(scores)
+        ranked = sorted(
+            range(len(actions)),
+            key=lambda idx: float(scores[idx].detach().cpu()),
+            reverse=True,
+        )[: max(1, top_k)]
+        return [
+            {
+                "rank": rank + 1,
+                "action": actions[idx],
+                "score": float(scores[idx].detach().cpu()),
+                "logprob": float(log_probs[idx].detach().cpu()),
+            }
+            for rank, idx in enumerate(ranked)
+        ]
+
     def _sequence_logprob(self, prompt_ids: list[int], response_ids: list[int]):
         return self._batch_sequence_logprobs(prompt_ids, [response_ids])[0]
+
+    def _sequence_score(self, prompt_ids: list[int], response_ids: list[int]):
+        return self._batch_sequence_scores(prompt_ids, [response_ids])[0]
+
+    def _sequence_score_for_observation(
+        self,
+        observation: str,
+        actions: list[str],
+        response_ids: list[int],
+    ):
+        prompt_ids = self._encode_prompt(observation, actions)
+        score = self._sequence_score(prompt_ids, response_ids)
+        if self.action_score_calibration != "pmi":
+            return score
+        prior_ids = self._encode_prompt(self._reference_observation(), actions)
+        return score - self._sequence_score(prior_ids, response_ids)
 
     def _batch_sequence_logprobs(self, prompt_ids: list[int], response_ids_list: list[list[int]]):
         torch = self.torch
@@ -283,19 +351,40 @@ class HFLoraPolicy:
         token_logprobs = target_logits - log_norm
         return (token_logprobs * response_mask).sum(dim=-1)
 
+    def _batch_sequence_scores(self, prompt_ids: list[int], response_ids_list: list[list[int]]):
+        scores = self._batch_sequence_logprobs(prompt_ids, response_ids_list)
+        if self.action_score_normalization == "sum":
+            return scores
+        lengths = self.torch.tensor(
+            [max(1, len(response_ids)) for response_ids in response_ids_list],
+            device=self.device,
+            dtype=scores.dtype,
+        )
+        if self.action_score_normalization == "sqrt":
+            lengths = self.torch.sqrt(lengths)
+        return scores / lengths
+
     def _candidate_scores(self, prompt_ids: list[int], actions: list[str]):
         response_ids = [self._encode_response(action) for action in actions]
         if len(response_ids) <= self.action_score_batch_size:
-            return self._batch_sequence_logprobs(prompt_ids, response_ids)
+            return self._batch_sequence_scores(prompt_ids, response_ids)
 
         chunks = []
         for start in range(0, len(response_ids), self.action_score_batch_size):
             chunk = response_ids[start : start + self.action_score_batch_size]
-            chunks.append(self._batch_sequence_logprobs(prompt_ids, chunk))
+            chunks.append(self._batch_sequence_scores(prompt_ids, chunk))
         return self.torch.cat(chunks, dim=0)
 
-    def _candidate_log_distribution(self, prompt_ids: list[int], actions: list[str]):
+    def _candidate_scores_for_observation(self, observation: str, actions: list[str]):
+        prompt_ids = self._encode_prompt(observation, actions)
         scores = self._candidate_scores(prompt_ids, actions)
+        if self.action_score_calibration != "pmi":
+            return scores
+        prior_ids = self._encode_prompt(self._reference_observation(), actions)
+        return scores - self._candidate_scores(prior_ids, actions)
+
+    def _candidate_log_distribution(self, observation: str, actions: list[str]):
+        scores = self._candidate_scores_for_observation(observation, actions)
         return self._candidate_log_distribution_from_scores(scores)
 
     def _candidate_log_distribution_from_scores(self, scores):
@@ -306,9 +395,9 @@ class HFLoraPolicy:
         entropy = -(probs * log_probs).sum()
         return log_probs, entropy
 
-    def _candidate_entropy_no_grad(self, prompt_ids: list[int], actions: list[str]):
+    def _candidate_entropy_no_grad(self, observation: str, actions: list[str]):
         with self.torch.no_grad():
-            _, entropy = self._candidate_log_distribution(prompt_ids, actions)
+            _, entropy = self._candidate_log_distribution(observation, actions)
         return entropy.detach()
 
     def _old_logprob_for_action(self, scores, log_probs, action_idx: int):
@@ -316,16 +405,49 @@ class HFLoraPolicy:
             return scores[action_idx]
         return log_probs[action_idx]
 
-    def _candidate_action_logprob(self, prompt_ids: list[int], actions: list[str], action: str):
+    def _candidate_action_logprob(self, observation: str, actions: list[str], action: str):
         if action not in actions:
             actions = list(actions) + [action]
-        log_probs, entropy = self._candidate_log_distribution(prompt_ids, actions)
+        log_probs, entropy = self._candidate_log_distribution(observation, actions)
         action_idx = actions.index(action)
         return log_probs[action_idx], entropy
 
     def _encode_prompt(self, observation: str, action_space: list[str]) -> list[int]:
-        prompt = format_agent_prompt(observation, action_space)
+        prompt = self._format_prompt(observation, action_space)
         return self.tokenizer(prompt, add_special_tokens=True).input_ids
+
+    def _format_prompt(self, observation: str, action_space: list[str]) -> str:
+        if self.use_chat_template and hasattr(self.tokenizer, "apply_chat_template"):
+            actions = "\n".join(f"- {action}" for action in action_space)
+            messages = [
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an agent solving a long-horizon interactive task. "
+                        "Choose exactly one available action and output only that action."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Observation:\n{observation}\n\n"
+                        f"Available actions:\n{actions}\n\n"
+                        "Next action:"
+                    ),
+                },
+            ]
+            try:
+                return self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception:
+                pass
+        return format_agent_prompt(observation, action_space)
+
+    def _reference_observation(self) -> str:
+        return "No task-specific observation is available."
 
     def _encode_response(self, action: str) -> list[int]:
         suffix = self.tokenizer.eos_token or ""

@@ -8,6 +8,9 @@ SEEDS="${SEEDS:-7 13 21 42 100}"
 JOBS="${JOBS:-1}"
 GPU_IDS="${GPU_IDS:-0 1}"
 SETS="${SETS:-fair}"
+OVERWRITE="${OVERWRITE:-0}"
+KERNELS="${KERNELS:-grpo recency evidence gated}"
+export OVERWRITE
 
 echo "[1/6] Regenerate Stage B configs with seeds: ${SEEDS}"
 if [[ " ${SETS} " == *" fair "* || " ${SETS} " == *" ablation "* ]]; then
@@ -17,6 +20,7 @@ if [[ " ${SETS} " == *" fair "* || " ${SETS} " == *" ablation "* ]]; then
     --out-dir configs/hf_lora_stage_b_fair \
     --out-root runs/hf_lora_stage_b_fair \
     --lag 2 \
+    --kernels ${KERNELS} \
     --seeds ${SEEDS}
 fi
 
@@ -27,6 +31,7 @@ if [[ " ${SETS} " == *" lag1 "* ]]; then
     --out-dir configs/hf_lora_stage_b_lag1 \
     --out-root runs/hf_lora_stage_b_lag1 \
     --lag 1 \
+    --kernels ${KERNELS} \
     --seeds ${SEEDS}
 fi
 
@@ -37,6 +42,7 @@ if [[ " ${SETS} " == *" lag3 "* ]]; then
     --out-dir configs/hf_lora_stage_b_lag3 \
     --out-root runs/hf_lora_stage_b_lag3 \
     --lag 3 \
+    --kernels ${KERNELS} \
     --seeds ${SEEDS}
 fi
 
@@ -54,7 +60,7 @@ run_config() {
   local gpu="${2:-0}"
   local out_dir
   out_dir="$(python -c "import json; print(json.load(open('${cfg}', encoding='utf-8'))['output_dir'])")"
-  if [[ -f "${out_dir}/eval_metrics.csv" ]]; then
+  if [[ "${OVERWRITE}" != "1" && -f "${out_dir}/eval_metrics.csv" ]]; then
     echo "[skip] ${cfg} -> ${out_dir}"
     return 0
   fi
@@ -62,6 +68,28 @@ run_config() {
   CUDA_VISIBLE_DEVICES="${gpu}" python -m ecr_grpo.trainer --config "${cfg}"
 }
 export -f run_config
+
+seed_selected() {
+  local cfg="$1"
+  local seed
+  for seed in ${SEEDS}; do
+    if [[ "${cfg}" == *"seed${seed}.json" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+kernel_selected() {
+  local cfg="$1"
+  local kernel
+  for kernel in ${KERNELS}; do
+    if [[ "${cfg}" == *"/${kernel}/"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 run_set() {
   local label="$1"
@@ -76,6 +104,12 @@ run_set() {
   local idx=0
   local active=0
   while IFS= read -r -d '' cfg; do
+    if ! seed_selected "${cfg}"; then
+      continue
+    fi
+    if [[ "${label}" != "ablation" ]] && ! kernel_selected "${cfg}"; then
+      continue
+    fi
     local gpu="${gpus[$((idx % ${#gpus[@]}))]}"
     run_config "${cfg}" "${gpu}" &
     idx=$((idx + 1))

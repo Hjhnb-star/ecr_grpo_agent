@@ -104,9 +104,13 @@ class ECRGRPOTrainer:
                 eval_row = {"update": update_idx, **self.evaluate()}
                 self.eval_rows.append(eval_row)
                 write_csv(self.output_dir / "eval_metrics.csv", self.eval_rows)
+                self._write_eval_action_rankings(update_idx)
+                self._write_eval_traces(update_idx)
                 print(
                     f"update={update_idx:04d} kernel={self.kernel.name} "
                     f"success={eval_row['success_rate']:.3f} "
+                    f"acc={eval_row.get('action_accuracy', 0.0):.3f} "
+                    f"progress={eval_row.get('avg_progress_fraction', 0.0):.3f} "
                     f"credit_causal={row['credit_mass_on_causal_steps']:.3f} "
                     f"entropy={row['entropy']:.3f}"
                 )
@@ -124,7 +128,82 @@ class ECRGRPOTrainer:
             policy=self.policy,
             max_steps=self.max_steps,
             greedy=True,
-        )
+            )
+
+    def _write_eval_action_rankings(self, update_idx: int) -> None:
+        if not hasattr(self.policy, "rank_actions"):
+            return
+        eval_cfg = self.config.get("evaluation", {})
+        top_k = int(eval_cfg.get("rank_top_k", 5))
+        num_tasks = int(eval_cfg.get("rank_num_tasks", min(6, len(self.tasks))))
+        if top_k <= 0 or num_tasks <= 0:
+            return
+        for task in self.tasks[:num_tasks]:
+            env: AsyncEnvWrapper = self._env_factory()
+            obs = env.reset(task_id=task.task_id, episode_id=f"rank_{update_idx}_{task.task_id}")
+            expected = None
+            if hasattr(task, "sequence") and getattr(task, "sequence"):
+                expected = getattr(task, "sequence")[0]
+            append_jsonl(
+                self.output_dir / "eval_action_rankings.jsonl",
+                {
+                    "update": update_idx,
+                    "task_id": task.task_id,
+                    "expected_action": expected,
+                    "observation": obs,
+                    "top_actions": self.policy.rank_actions(
+                        obs,
+                        action_space=list(env.action_space),
+                        top_k=top_k,
+                    ),
+                },
+            )
+
+    def _write_eval_traces(self, update_idx: int) -> None:
+        eval_cfg = self.config.get("evaluation", {})
+        num_tasks = int(eval_cfg.get("trace_num_tasks", min(4, len(self.tasks))))
+        top_k = int(eval_cfg.get("trace_top_k", 3))
+        if num_tasks <= 0:
+            return
+        for task in self.tasks[:num_tasks]:
+            env: AsyncEnvWrapper = self._env_factory()
+            obs = env.reset(task_id=task.task_id, episode_id=f"trace_{update_idx}_{task.task_id}")
+            trace = []
+            success = False
+            for step_id in range(self.max_steps):
+                action_space = list(env.action_space)
+                top_actions = []
+                if top_k > 0 and hasattr(self.policy, "rank_actions"):
+                    top_actions = self.policy.rank_actions(obs, action_space=action_space, top_k=top_k)
+                action = self.policy.act(obs, action_space=action_space, greedy=True)
+                next_obs, reward, done, info = env.step(action.text)
+                trace.append(
+                    {
+                        "step_id": step_id,
+                        "observation": obs,
+                        "expected_action": info.get("expected_action"),
+                        "action": action.text,
+                        "correct": bool(info.get("causal_action", False)),
+                        "reward": reward,
+                        "progress": info.get("progress"),
+                        "done": done,
+                        "success": bool(info.get("success", False)),
+                        "top_actions": top_actions,
+                    }
+                )
+                obs = next_obs
+                if done:
+                    success = bool(info.get("success", False))
+                    break
+            append_jsonl(
+                self.output_dir / "eval_traces.jsonl",
+                {
+                    "update": update_idx,
+                    "task_id": task.task_id,
+                    "success": success,
+                    "trace": trace,
+                },
+            )
 
     def robustness_sweep(self) -> None:
         rows = []
