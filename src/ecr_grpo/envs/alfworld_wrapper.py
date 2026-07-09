@@ -74,6 +74,7 @@ class ALFWorldEnv:
         self.fallback_action_space = list(fallback_action_space)
         self.latest_admissible = list(fallback_action_space)
         self.task_id = "alfworld_task"
+        self.actual_task_id = "alfworld_task"
         self.episode_id = "alfworld_episode"
         self.step_count = 0
         self.seed = seed
@@ -90,7 +91,8 @@ class ALFWorldEnv:
         obs, infos = self.env.reset()
         obs_text = self._first(obs, "")
         self.step_count = 0
-        self.task_id = task_id or self._read_task_id(infos)
+        self.actual_task_id = self._read_task_id(infos)
+        self.task_id = task_id or self.actual_task_id
         self.episode_id = episode_id or f"{self.task_id}_episode"
         self.latest_admissible = self._read_admissible(infos)
         self.previous_observation = self._normalize_obs(obs_text)
@@ -186,6 +188,7 @@ class ALFWorldEnv:
         self.previous_action = action
         self.seen_observations.add(next_obs_norm)
         actual_task_id = self._read_task_id(infos)
+        self.actual_task_id = actual_task_id
         info = {
             "task_id": self.task_id,
             "actual_task_id": actual_task_id,

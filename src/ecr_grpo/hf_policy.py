@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import random
+from pathlib import Path
 from typing import Any
 
 from ecr_grpo.policies import format_agent_prompt
@@ -15,7 +16,7 @@ class HFLoraPolicy:
 
     - text-action generation
     - candidate-action scoring or text generation
-    - old logprob collection for the selected action distribution
+    - old logprob collection for the selected candidate-action distribution
     - clipped GRPO-style policy update over step-level advantages
 
     Heavy distributed rollout/training can be swapped in later without changing the
@@ -41,7 +42,7 @@ class HFLoraPolicy:
         action_score_normalization: str = "mean",
         action_score_calibration: str = "pmi",
         use_chat_template: bool = True,
-        update_score_mode: str = "selected",
+        update_score_mode: str = "full_distribution",
         clip_eps: float = 0.2,
         grad_accum_steps: int = 1,
         max_grad_norm: float = 1.0,
@@ -83,6 +84,13 @@ class HFLoraPolicy:
             raise ValueError("HF action_score_normalization must be 'sum', 'mean', or 'sqrt'")
         if self.action_score_calibration not in {"none", "pmi"}:
             raise ValueError("HF action_score_calibration must be 'none' or 'pmi'")
+        model_path = Path(model_id)
+        if model_path.is_absolute() and not model_path.exists():
+            raise FileNotFoundError(
+                f"HF model path does not exist: {model_id}. "
+                "Set MODEL_ID or ECR_GRPO_MODEL_ID to a valid local model path, "
+                "or use a HuggingFace repo id such as Qwen/Qwen2.5-1.5B-Instruct."
+            )
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
         if self.tokenizer.pad_token is None and self.tokenizer.eos_token is not None:
@@ -122,6 +130,8 @@ class HFLoraPolicy:
 
         self.model.train()
         self.optimizer = None
+        self._response_id_cache: dict[str, list[int]] = {}
+        self._prior_score_cache: dict[tuple[str, ...], Any] = {}
 
     def act(
         self,
@@ -254,11 +264,13 @@ class HFLoraPolicy:
                 self._clip_grad_norm()
                 self.optimizer.step()
                 self.optimizer.zero_grad(set_to_none=True)
+                self._clear_runtime_caches()
 
         if len(steps) % self.grad_accum_steps != 0:
             self._clip_grad_norm()
             self.optimizer.step()
             self.optimizer.zero_grad(set_to_none=True)
+            self._clear_runtime_caches()
 
         denom = max(1, len(steps))
         return {
@@ -266,6 +278,9 @@ class HFLoraPolicy:
             "mean_ratio": total_ratio / denom,
             "entropy": total_entropy / denom,
         }
+
+    def update_grpo(self, steps: list[StepRecord], lr: float) -> dict[str, float]:
+        return self.update(steps, lr=lr)
 
     def save(self, path: str) -> None:
         self.model.save_pretrained(path)
@@ -277,6 +292,9 @@ class HFLoraPolicy:
         trainable = [p for p in self.model.parameters() if p.requires_grad and p.grad is not None]
         if trainable:
             self.torch.nn.utils.clip_grad_norm_(trainable, self.max_grad_norm)
+
+    def _clear_runtime_caches(self) -> None:
+        self._prior_score_cache.clear()
 
     def rank_actions(
         self,
@@ -321,8 +339,14 @@ class HFLoraPolicy:
         score = self._sequence_score(prompt_ids, response_ids)
         if self.action_score_calibration != "pmi":
             return score
-        prior_ids = self._encode_prompt(self._reference_observation(), actions)
-        return score - self._sequence_score(prior_ids, response_ids)
+        action = self._decode_cached_response(response_ids)
+        if action is None:
+            prior_ids = self._encode_prompt(self._reference_observation(), actions)
+            with self.torch.no_grad():
+                prior_score = self._sequence_score(prior_ids, response_ids).detach()
+            return score - prior_score
+        prior_scores = self._cached_prior_scores(actions)
+        return score - prior_scores[actions.index(action)].detach()
 
     def _batch_sequence_logprobs(self, prompt_ids: list[int], response_ids_list: list[list[int]]):
         torch = self.torch
@@ -380,8 +404,22 @@ class HFLoraPolicy:
         scores = self._candidate_scores(prompt_ids, actions)
         if self.action_score_calibration != "pmi":
             return scores
-        prior_ids = self._encode_prompt(self._reference_observation(), actions)
-        return scores - self._candidate_scores(prior_ids, actions)
+        return scores - self._cached_prior_scores(actions).detach()
+
+    def _cached_prior_scores(self, actions: list[str]):
+        key = tuple(actions)
+        cached = self._prior_score_cache.get(key)
+        if cached is not None:
+            return cached
+        was_training = self.model.training
+        self.model.eval()
+        with self.torch.no_grad():
+            prior_ids = self._encode_prompt(self._reference_observation(), actions)
+            prior_scores = self._candidate_scores(prior_ids, actions).detach()
+        if was_training:
+            self.model.train()
+        self._prior_score_cache[key] = prior_scores
+        return prior_scores
 
     def _candidate_log_distribution(self, observation: str, actions: list[str]):
         scores = self._candidate_scores_for_observation(observation, actions)
@@ -450,11 +488,22 @@ class HFLoraPolicy:
         return "No task-specific observation is available."
 
     def _encode_response(self, action: str) -> list[int]:
+        cached = self._response_id_cache.get(action)
+        if cached is not None:
+            return list(cached)
         suffix = self.tokenizer.eos_token or ""
         ids = self.tokenizer(action + suffix, add_special_tokens=False).input_ids
         if not ids:
             ids = [self.eos_token_id or self.pad_token_id]
+        self._response_id_cache[action] = list(ids)
         return ids
+
+    def _decode_cached_response(self, response_ids: list[int]) -> str | None:
+        normalized = list(response_ids)
+        for action, cached in self._response_id_cache.items():
+            if cached == normalized:
+                return action
+        return None
 
     def _parse_action(self, text: str, actions: list[str]) -> str:
         first_line = text.strip().splitlines()[0].strip() if text.strip() else ""

@@ -1,0 +1,400 @@
+{
+  "version": 1,
+  "updated_at": "2026-07-08T15:32:58.732159+00:00",
+  "papers": {
+    "shao2024deepseekmath": {
+      "paper_id": "shao2024deepseekmath",
+      "title": "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models",
+      "authors": [
+        "Zhihong Shao",
+        "Peiyi Wang",
+        "Qihao Zhu",
+        "Runxin Xu",
+        "Junxiao Song",
+        "Xiao Bi",
+        "Haowei Zhang",
+        "Mingchuan Zhang",
+        "Y. K. Li",
+        "Y. Wu",
+        "Daya Guo"
+      ],
+      "year": 2024,
+      "venue": "arXiv",
+      "arxiv_id": "2402.03300",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2402.03300.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/shao2024deepseekmath.pdf",
+      "summary_path": "relatedwork/papers/shao2024deepseekmath.md",
+      "source_queries": [
+        "GRPO group relative advantage agent training",
+        "delayed reward reinforcement learning LLM agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782014+00:00",
+      "updated_at": "2026-07-08T15:30:13.728524+00:00"
+    },
+    "deepseekai2025deepseekr1": {
+      "paper_id": "deepseekai2025deepseekr1",
+      "title": "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning",
+      "authors": [
+        "DeepSeek-AI"
+      ],
+      "year": 2025,
+      "venue": "arXiv",
+      "arxiv_id": "2501.12948",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2501.12948.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/deepseekai2025deepseekr1.pdf",
+      "summary_path": "relatedwork/papers/deepseekai2025deepseekr1.md",
+      "source_queries": [
+        "GRPO group relative advantage agent training",
+        "delayed reward reinforcement learning LLM agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782036+00:00",
+      "updated_at": "2026-07-08T15:29:31.250905+00:00"
+    },
+    "zhou2026demystifyinggrpo": {
+      "paper_id": "zhou2026demystifyinggrpo",
+      "title": "Demystifying Group Relative Policy Optimization: Its Policy Gradient is a U-Statistic",
+      "authors": [
+        "Hongyi Zhou",
+        "Kai Ye",
+        "Erhan Xu",
+        "Jin Zhu",
+        "Shijin Gong",
+        "Chengchun Shi"
+      ],
+      "year": 2026,
+      "venue": "arXiv",
+      "arxiv_id": "2603.01162",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2603.01162.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/zhou2026demystifyinggrpo.pdf",
+      "summary_path": "relatedwork/papers/zhou2026demystifyinggrpo.md",
+      "source_queries": [
+        "GRPO group relative advantage agent training"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782047+00:00",
+      "updated_at": "2026-07-08T15:32:45.293304+00:00"
+    },
+    "schulman2017ppo": {
+      "paper_id": "schulman2017ppo",
+      "title": "Proximal Policy Optimization Algorithms",
+      "authors": [
+        "John Schulman",
+        "Filip Wolski",
+        "Prafulla Dhariwal",
+        "Alec Radford",
+        "Oleg Klimov"
+      ],
+      "year": 2017,
+      "venue": "arXiv",
+      "arxiv_id": "1707.06347",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/1707.06347.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/schulman2017ppo.pdf",
+      "summary_path": "relatedwork/papers/schulman2017ppo.md",
+      "source_queries": [
+        "delayed reward reinforcement learning LLM agents",
+        "GRPO group relative advantage agent training"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782053+00:00",
+      "updated_at": "2026-07-08T15:30:14.266180+00:00"
+    },
+    "arjonamedina2018rudder": {
+      "paper_id": "arjonamedina2018rudder",
+      "title": "RUDDER: Return Decomposition for Delayed Rewards",
+      "authors": [
+        "Jose A. Arjona-Medina",
+        "Michael Gillhofer",
+        "Michael Widrich",
+        "Thomas Unterthiner",
+        "Johannes Brandstetter",
+        "Sepp Hochreiter"
+      ],
+      "year": 2018,
+      "venue": "arXiv",
+      "arxiv_id": "1806.07857",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/1806.07857.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/arjonamedina2018rudder.pdf",
+      "summary_path": "relatedwork/papers/arjonamedina2018rudder.md",
+      "source_queries": [
+        "asynchronous credit assignment long horizon agents",
+        "delayed reward reinforcement learning LLM agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782058+00:00",
+      "updated_at": "2026-07-08T15:27:53.968033+00:00"
+    },
+    "lightman2023verify": {
+      "paper_id": "lightman2023verify",
+      "title": "Let's Verify Step by Step",
+      "authors": [
+        "Hunter Lightman",
+        "Vineet Kosaraju",
+        "Yura Burda",
+        "Harri Edwards",
+        "Bowen Baker",
+        "Teddy Lee",
+        "Jan Leike",
+        "John Schulman",
+        "Ilya Sutskever",
+        "Karl Cobbe"
+      ],
+      "year": 2023,
+      "venue": "arXiv",
+      "arxiv_id": "2305.20050",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2305.20050.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/lightman2023verify.pdf",
+      "summary_path": "relatedwork/papers/lightman2023verify.md",
+      "source_queries": [
+        "step level process supervision language agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782063+00:00",
+      "updated_at": "2026-07-08T15:28:58.581906+00:00"
+    },
+    "cobbe2021verifiers": {
+      "paper_id": "cobbe2021verifiers",
+      "title": "Training Verifiers to Solve Math Word Problems",
+      "authors": [
+        "Karl Cobbe",
+        "Vineet Kosaraju",
+        "Mohammad Bavarian",
+        "Mark Chen",
+        "Heewoo Jun",
+        "Lukasz Kaiser",
+        "Matthias Plappert",
+        "Jerry Tworek",
+        "Jacob Hilton",
+        "Reiichiro Nakano",
+        "Christopher Hesse",
+        "John Schulman"
+      ],
+      "year": 2021,
+      "venue": "arXiv",
+      "arxiv_id": "2110.14168",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2110.14168.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/cobbe2021verifiers.pdf",
+      "summary_path": "relatedwork/papers/cobbe2021verifiers.md",
+      "source_queries": [
+        "step level process supervision language agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782068+00:00",
+      "updated_at": "2026-07-08T15:27:58.226881+00:00"
+    },
+    "luo2025agentlightning": {
+      "paper_id": "luo2025agentlightning",
+      "title": "Agent Lightning: Train ANY AI Agents with Reinforcement Learning",
+      "authors": [
+        "Xufang Luo",
+        "Yuge Zhang",
+        "Zhiyuan He",
+        "Zilong Wang",
+        "Siyun Zhao",
+        "Dongsheng Li",
+        "Luna K. Qiu",
+        "Yuqing Yang"
+      ],
+      "year": 2025,
+      "venue": "arXiv",
+      "arxiv_id": "2508.03680",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2508.03680.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/luo2025agentlightning.pdf",
+      "summary_path": "relatedwork/papers/luo2025agentlightning.md",
+      "source_queries": [
+        "asynchronous credit assignment long horizon agents",
+        "event conditioned reward refill policy gradient"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782074+00:00",
+      "updated_at": "2026-07-08T15:29:43.614519+00:00"
+    },
+    "shridhar2020alfworld": {
+      "paper_id": "shridhar2020alfworld",
+      "title": "ALFWorld: Aligning Text and Embodied Environments for Interactive Learning",
+      "authors": [
+        "Mohit Shridhar",
+        "Xingdi Yuan",
+        "Marc-Alexandre Cote",
+        "Yonatan Bisk",
+        "Adam Trischler",
+        "Matthew Hausknecht"
+      ],
+      "year": 2020,
+      "venue": "arXiv",
+      "arxiv_id": "2010.03768",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2010.03768.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/shridhar2020alfworld.pdf",
+      "summary_path": "relatedwork/papers/shridhar2020alfworld.md",
+      "source_queries": [
+        "synthetic diagnostic environment agent credit attribution"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782078+00:00",
+      "updated_at": "2026-07-08T15:31:08.609056+00:00"
+    },
+    "yao2022react": {
+      "paper_id": "yao2022react",
+      "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+      "authors": [
+        "Shunyu Yao",
+        "Jeffrey Zhao",
+        "Dian Yu",
+        "Nan Du",
+        "Izhak Shafran",
+        "Karthik Narasimhan",
+        "Yuan Cao"
+      ],
+      "year": 2022,
+      "venue": "arXiv",
+      "arxiv_id": "2210.03629",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2210.03629.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/yao2022react.pdf",
+      "summary_path": "relatedwork/papers/yao2022react.md",
+      "source_queries": [
+        "synthetic diagnostic environment agent credit attribution",
+        "delayed reward reinforcement learning LLM agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782083+00:00",
+      "updated_at": "2026-07-08T15:31:41.224992+00:00"
+    },
+    "shinn2023reflexion": {
+      "paper_id": "shinn2023reflexion",
+      "title": "Reflexion: Language Agents with Verbal Reinforcement Learning",
+      "authors": [
+        "Noah Shinn",
+        "Federico Cassano",
+        "Edward Berman",
+        "Ashwin Gopinath",
+        "Karthik Narasimhan",
+        "Shunyu Yao"
+      ],
+      "year": 2023,
+      "venue": "arXiv",
+      "arxiv_id": "2303.11366",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2303.11366.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/shinn2023reflexion.pdf",
+      "summary_path": "relatedwork/papers/shinn2023reflexion.md",
+      "source_queries": [
+        "event conditioned reward refill policy gradient",
+        "delayed reward reinforcement learning LLM agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782088+00:00",
+      "updated_at": "2026-07-08T15:31:26.104268+00:00"
+    },
+    "yao2022webshop": {
+      "paper_id": "yao2022webshop",
+      "title": "WebShop: Towards Scalable Real-World Web Interaction with Grounded Language Agents",
+      "authors": [
+        "Shunyu Yao",
+        "Howard Chen",
+        "John Yang",
+        "Karthik Narasimhan"
+      ],
+      "year": 2022,
+      "venue": "arXiv",
+      "arxiv_id": "2207.01206",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2207.01206.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/yao2022webshop.pdf",
+      "summary_path": "relatedwork/papers/yao2022webshop.md",
+      "source_queries": [
+        "synthetic diagnostic environment agent credit attribution"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782092+00:00",
+      "updated_at": "2026-07-08T15:32:00.206280+00:00"
+    },
+    "zhou2023lats": {
+      "paper_id": "zhou2023lats",
+      "title": "Language Agent Tree Search Unifies Reasoning Acting and Planning in Language Models",
+      "authors": [
+        "Andy Zhou",
+        "Kai Yan",
+        "Michal Shlapentokh-Rothman",
+        "Haohan Wang",
+        "Yu-Xiong Wang"
+      ],
+      "year": 2023,
+      "venue": "arXiv",
+      "arxiv_id": "2310.04406",
+      "bibtex": "",
+      "pdf_url": "https://arxiv.org/pdf/2310.04406.pdf",
+      "download_status": "downloaded",
+      "download_error": null,
+      "pdf_path": "relatedwork/pdfs/zhou2023lats.pdf",
+      "summary_path": "relatedwork/papers/zhou2023lats.md",
+      "source_queries": [
+        "synthetic diagnostic environment agent credit attribution",
+        "delayed reward reinforcement learning LLM agents"
+      ],
+      "source": "manual_seed_after_semantic_scholar_429",
+      "pdf_exists": true,
+      "summary_exists": true,
+      "added_at": "2026-07-08T15:24:22.782097+00:00",
+      "updated_at": "2026-07-08T15:32:49.588513+00:00"
+    }
+  }
+}

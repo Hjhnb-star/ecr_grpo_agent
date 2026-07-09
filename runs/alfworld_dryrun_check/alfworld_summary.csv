@@ -1,0 +1,3 @@
+kernel,seed,status,run_dir,config_path
+grpo,7,planned,ecr_grpo_agent\runs\alfworld_dryrun_check\grpo\seed=7,ecr_grpo_agent\runs\alfworld_dryrun_check\_generated_configs\grpo_seed7.json
+gated,7,planned,ecr_grpo_agent\runs\alfworld_dryrun_check\gated\seed=7,ecr_grpo_agent\runs\alfworld_dryrun_check\_generated_configs\gated_seed7.json

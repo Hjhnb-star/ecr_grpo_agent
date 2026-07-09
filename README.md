@@ -24,10 +24,16 @@ ALFWorld, ScienceWorld, WebShop, or tool-orchestration tasks.
 - GRPO-style group-relative advantages:
   - `advantage_mode="trajectory"` for trajectory-return GRPO compatibility
   - `advantage_mode="step"` for event-conditioned ECR credit updates
+- GRPO adapter that converts ECR-refilled rewards into standard GRPO samples:
+  - `credit.output="step_reward"` or `"trajectory_reward"` selects the reward unit
+  - `optimizer.name="grpo"` and `optimizer.update_impl="standard_grpo"` keep the optimizer fixed
+  - `training.optimizer="grpo"` keeps the policy optimizer fixed
+  - `training.grpo_reward_unit="step"` uses ECR-refilled step rewards
+  - `training.grpo_reward_unit="trajectory"` uses trajectory rewards
 - Lightweight tabular text-action policy for smoke experiments.
 - Optional HuggingFace causal-LM policy with LoRA, candidate-action scoring, and a compact
-  clipped GRPO update. The HF path supports memory-safe selected-action updates for 24 GB
-  GPUs.
+  clipped GRPO update. The HF path defaults to candidate-distribution ratios, with an
+  explicit selected-action approximation available for tight memory budgets.
 - Optional ALFWorld environment adapter.
 - Train/eval CLI.
 - Stage B config generation, server runner, and summary scripts.
@@ -81,10 +87,11 @@ interface and classifies events from `event_type`, `observation_delta`, and meta
 Important baseline naming:
 
 - `recency` is a local step-credit heuristic baseline, not standard GRPO.
-- The seamless GRPO-style baseline is `grpo`, implemented as
+- The trajectory GRPO baseline is `grpo`, implemented as
   `credit.kernel="trajectory_uniform"` plus `training.advantage_mode="trajectory"`.
-- ECR/Gated runs use step-level event credit, usually
-  `credit.kernel="gated_evidence"` plus `training.advantage_mode="step"`.
+- ECR/Gated runs still use standard GRPO; they only change reward construction,
+  usually `credit.kernel="gated_evidence"`, `credit.output="step_reward"`, and
+  `optimizer.update_impl="standard_grpo"`.
 
 ## HuggingFace + LoRA Placeholder
 
@@ -125,7 +132,7 @@ For two RTX 4090 cards, prefer:
     "action_score_calibration": "pmi",
     "use_chat_template": true,
     "temperature": 1.0,
-    "update_score_mode": "selected"
+    "update_score_mode": "full_distribution"
   }
 }
 ```
@@ -134,19 +141,21 @@ For two RTX 4090 cards, prefer:
 `action_score_calibration="pmi"` subtracts each action's prompt-independent prior score,
 which prevents generic or fluent wrong actions from dominating the candidate list.
 `use_chat_template=true` uses the tokenizer's instruction-tuned chat format when available.
-`update_score_mode="selected"` keeps candidate scoring for behavior/action sampling, but uses
-the selected action sequence for the PPO/GRPO update. This avoids retaining a full
-candidate-distribution computation graph and is the recommended default before benchmark
-integration.
+`update_score_mode="full_distribution"` uses the same normalized candidate-action
+distribution for sampling, old logprobs, PPO/GRPO ratios, and entropy logging. This is the
+recommended default. `update_score_mode="selected"` is retained only as a lower-memory
+approximation: it updates the selected action score directly and should not be reported as
+the strict GRPO candidate-distribution objective.
 
 ## Stage B HF/LoRA Experiments on Server
 
-The fair Stage B comparison now includes:
+The fair Stage B comparison keeps the optimizer fixed as GRPO and varies only reward
+construction:
 
-- `grpo`: trajectory-uniform credit with trajectory-return advantages.
-- `recency`: local recent-step credit heuristic.
-- `evidence`: evidence attribution for event-to-step credit.
-- `gated`: recency for local feedback, evidence attribution for non-local events.
+- `grpo`: GRPO fed by trajectory-uniform terminal reward.
+- `recency`: GRPO fed by recency-refilled step rewards.
+- `evidence`: GRPO fed by evidence-refilled step rewards.
+- `gated`: GRPO fed by gated ECR-refilled step rewards.
 
 On the Linux server:
 
@@ -168,13 +177,15 @@ SEEDS="7" SETS="fair" KERNELS="gated" GPU_IDS="0" JOBS=1 OVERWRITE=1 bash script
 The Stage B HF configs use `learning_rate=1e-5`, `num_updates=60`,
 `tasks_per_update=4`, `action_score_normalization="mean"`, and
 `action_score_calibration="pmi"`, `use_chat_template=true`, and
-`update_score_mode="selected"` by default. HF updates also use `max_grad_norm=1.0`.
+`update_score_mode="full_distribution"` by default. They also set
+`training.optimizer="grpo"` and route ECR outputs through the GRPO adapter before policy
+update. HF updates use `max_grad_norm=1.0`.
 During evaluation the trainer writes `eval_action_rankings.jsonl` for first-step top-k
 diagnostics and `eval_traces.jsonl` for full greedy rollout traces. If success drops while
 first-step rankings remain correct, inspect `eval_traces.jsonl` to find the later step where
 the policy diverges.
 
-If memory is still tight, run one job at a time:
+If memory is still tight, reduce `ECR_GRPO_ACTION_SCORE_BATCH_SIZE` or run one job at a time:
 
 ```bash
 SETS="fair" GPU_IDS="0" JOBS=1 bash scripts/run_stage_b_server.sh
@@ -230,44 +241,76 @@ A useful Stage B result is not merely "better than recency". The stronger claim 
 earlier action under no-oracle metadata. That is the evidence needed before moving to
 ALFWorld or other real benchmarks.
 
-## ALFWorld Smoke / Fair Test
+## ALFWorld Benchmark Train/Test
 
 Install ALFWorld separately, then install this package with optional dependencies:
 
-```powershell
+```bash
 pip install -e ".[alfworld,hf]"
 ```
 
-First generate and validate the exact ALFWorld run configs:
+On the Linux server, first validate the generated benchmark configs without training:
 
-```powershell
-$env:PYTHONPATH = "$PWD\src"
-python -m ecr_grpo.run_alfworld `
-  --base-config configs\alfworld_gated_smoke.json `
-  --output-root runs\alfworld_fair `
-  --alfworld-config C:\path\to\alfworld\configs\base_config.yaml `
-  --model-id C:\path\to\Qwen2.5-1.5B-Instruct `
-  --kernels grpo recency evidence gated dependency `
-  --seeds 7 `
-  --dry-run
+```bash
+cd /data/anonym1/yf/hjh/ecr_grpo_agent
+export PYTHONPATH=src:${PYTHONPATH:-}
+export ALFWORLD_CONFIG=/path/to/alfworld/configs/base_config.yaml
+export MODEL_ID=/data/anonym1/yf/hjh/ecr_grpo_agent/models/Qwen/Qwen2.5-1.5B-Instruct
+
+DRY_RUN=1 \
+KERNELS="grpo recency evidence gated" \
+SEEDS="7" \
+TRAIN_SPLIT=train \
+EVAL_SPLIT=eval_out_of_distribution \
+NUM_TRAIN_TASKS=32 \
+NUM_EVAL_TASKS=32 \
+MAX_STEPS=50 \
+bash scripts/run_alfworld_server.sh
 ```
 
-Then remove `--dry-run` to execute the same configs:
+Then run the same protocol on one GPU:
 
-```powershell
-$env:PYTHONPATH = "$PWD\src"
-python -m ecr_grpo.run_alfworld `
-  --base-config configs\alfworld_gated_smoke.json `
-  --output-root runs\alfworld_fair `
-  --alfworld-config C:\path\to\alfworld\configs\base_config.yaml `
-  --model-id C:\path\to\Qwen2.5-1.5B-Instruct `
-  --kernels grpo recency evidence gated dependency `
-  --seeds 7
+```bash
+DRY_RUN=0 OVERWRITE=1 GPU_ID=0 \
+KERNELS="grpo recency evidence gated" \
+SEEDS="7" \
+TRAIN_SPLIT=train \
+EVAL_SPLIT=eval_out_of_distribution \
+NUM_TRAIN_TASKS=32 \
+NUM_EVAL_TASKS=32 \
+MAX_STEPS=50 \
+bash scripts/run_alfworld_server.sh
+```
+
+The runner uses `train` for policy updates and `eval_out_of_distribution` for held-out
+benchmark evaluation. `CLEAN_EVAL=1` is the default, so final benchmark metrics are measured
+without artificial async delay, missing rewards, or timeouts. Training still uses the async
+event stream from the main `async` config.
+
+You can also call the Python runner directly:
+
+```bash
+python -m ecr_grpo.run_alfworld \
+  --base-config configs/alfworld_gated_smoke.json \
+  --output-root runs/alfworld_fair \
+  --alfworld-config /path/to/alfworld/configs/base_config.yaml \
+  --model-id /data/anonym1/yf/hjh/ecr_grpo_agent/models/Qwen/Qwen2.5-1.5B-Instruct \
+  --kernels grpo recency evidence gated \
+  --seeds 7 \
+  --train-split train \
+  --eval-split eval_out_of_distribution \
+  --num-train-tasks 32 \
+  --num-eval-tasks 32 \
+  --max-steps 50 \
+  --clean-eval \
+  --dry-run
 ```
 
 Generated configs are written to `runs/alfworld_fair/_generated_configs/`.
 The runner skips a run if `eval_metrics.csv` already exists unless `--overwrite` is set.
-The comparison summary is written to `runs/alfworld_fair/alfworld_summary.csv`.
+The comparison summary is written to `runs/alfworld_fair/alfworld_summary.csv`. During eval,
+`eval_traces.jsonl` and `eval_action_rankings.jsonl` include the ALFWorld split and the actual
+gamefile-derived task id, which is useful for inspecting failed benchmark episodes.
 
 ## Why Tabular Policy First?
 

@@ -1,0 +1,106 @@
+{
+  "experiment_name": "alfworld_grpo_seed7",
+  "output_dir": "ecr_grpo_agent\\runs\\alfworld_dryrun_check\\grpo\\seed=7",
+  "seed": 7,
+  "environment": {
+    "name": "alfworld",
+    "alfworld_config": "C:\\tmp\\alfworld\\base_config.yaml",
+    "split": "train",
+    "train_split": "train",
+    "eval_split": "eval_out_of_distribution",
+    "reuse_env": true,
+    "num_tasks": 2,
+    "num_train_tasks": 2,
+    "max_steps": 5,
+    "shaping": {
+      "enabled": true,
+      "valid_action_reward": 0.02,
+      "observation_change_reward": 0.03,
+      "new_state_reward": 0.02,
+      "stagnation_penalty": -0.02,
+      "repeat_action_penalty": -0.03,
+      "invalid_action_penalty": -0.05
+    },
+    "action_space": [
+      "look",
+      "inventory",
+      "go north",
+      "go south",
+      "go east",
+      "go west",
+      "open door",
+      "close door",
+      "take object",
+      "put object in/on receptacle"
+    ]
+  },
+  "async": {
+    "enabled": true,
+    "delay_prob": 0.3,
+    "max_delay_steps": 3,
+    "timeout_prob": 0.03,
+    "interruption_prob": 0.0,
+    "missing_reward_prob": 0.05,
+    "terminal_reward_delay": 2,
+    "use_oracle_event_links": false,
+    "strip_diagnostic_metadata": true
+  },
+  "credit": {
+    "max_pending_age": 16,
+    "timeout_penalty": -0.2,
+    "kernel": "trajectory_uniform",
+    "output": "trajectory_reward"
+  },
+  "optimizer": {
+    "name": "grpo",
+    "advantage_mode": "trajectory",
+    "update_impl": "standard_grpo"
+  },
+  "policy": {
+    "kind": "hf_lora",
+    "model_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "adapter_path": null,
+    "use_lora": true,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.05,
+    "device": null,
+    "max_new_tokens": 16,
+    "temperature": 0.7,
+    "top_p": 0.95,
+    "action_selection": "score",
+    "action_score_batch_size": 2,
+    "update_score_mode": "full_distribution"
+  },
+  "training": {
+    "num_updates": 10,
+    "tasks_per_update": 1,
+    "group_size": 1,
+    "learning_rate": 5e-06,
+    "clip_eps": 0.2,
+    "grad_accum_steps": 1,
+    "checkpoint_every": 5,
+    "optimizer": "grpo",
+    "grpo_reward_unit": "trajectory",
+    "advantage_mode": "trajectory"
+  },
+  "evaluation": {
+    "split": "eval_out_of_distribution",
+    "every_updates": 5,
+    "num_eval_tasks": 2,
+    "async": {
+      "enabled": false,
+      "delay_prob": 0.0,
+      "max_delay_steps": 0,
+      "timeout_prob": 0.0,
+      "interruption_prob": 0.0,
+      "missing_reward_prob": 0.0,
+      "terminal_reward_delay": 0
+    },
+    "delay_sweep": [
+      0.0,
+      0.3
+    ],
+    "max_steps": 5
+  }
+}

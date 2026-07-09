@@ -139,7 +139,10 @@ def main() -> None:
             config["output_dir"] = f"{args.out_root}/{kernel}/seed={seed}"
             config["credit"] = make_credit(base_credit, kernel)
             training = config.setdefault("training", {})
-            training["advantage_mode"] = "trajectory" if kernel in {"grpo", "trajectory", "trajectory_uniform"} else "step"
+            reward_unit = "trajectory" if kernel in {"grpo", "trajectory", "trajectory_uniform"} else "step"
+            training["optimizer"] = "grpo"
+            training["grpo_reward_unit"] = reward_unit
+            training["advantage_mode"] = reward_unit
 
             kernel_dir = out_dir / kernel
             kernel_dir.mkdir(parents=True, exist_ok=True)

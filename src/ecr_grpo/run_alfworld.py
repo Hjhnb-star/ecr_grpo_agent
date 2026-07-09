@@ -95,6 +95,12 @@ def build_run_config(
     output_root: Path,
     alfworld_config: str | None = None,
     model_id: str | None = None,
+    train_split: str | None = None,
+    eval_split: str | None = None,
+    num_train_tasks: int | None = None,
+    num_eval_tasks: int | None = None,
+    max_steps: int | None = None,
+    clean_eval: bool = False,
 ) -> dict[str, Any]:
     config = copy.deepcopy(base_config)
     config["seed"] = seed
@@ -106,23 +112,60 @@ def build_run_config(
     env.setdefault("reuse_env", True)
     if alfworld_config:
         env["alfworld_config"] = alfworld_config
+    if train_split:
+        env["split"] = train_split
+        env["train_split"] = train_split
+    if eval_split:
+        env["eval_split"] = eval_split
+    if num_train_tasks is not None:
+        env["num_tasks"] = int(num_train_tasks)
+        env["num_train_tasks"] = int(num_train_tasks)
+    if max_steps is not None:
+        env["max_steps"] = int(max_steps)
+
+    evaluation = config.setdefault("evaluation", {})
+    if "eval_split" in env:
+        evaluation.setdefault("split", env["eval_split"])
+    if num_eval_tasks is not None:
+        evaluation["num_eval_tasks"] = int(num_eval_tasks)
+    if max_steps is not None:
+        evaluation.setdefault("max_steps", int(max_steps))
+    if clean_eval:
+        evaluation["async"] = {
+            "enabled": False,
+            "delay_prob": 0.0,
+            "max_delay_steps": 0,
+            "timeout_prob": 0.0,
+            "interruption_prob": 0.0,
+            "missing_reward_prob": 0.0,
+            "terminal_reward_delay": 0,
+        }
 
     async_cfg = config.setdefault("async", {})
     async_cfg["use_oracle_event_links"] = False
     async_cfg["strip_diagnostic_metadata"] = True
 
+    reward_unit = "trajectory" if kernel in {"grpo", "trajectory", "trajectory_uniform"} else "step"
     base_credit = dict(config.get("credit", {}))
     config["credit"] = make_credit(base_credit, kernel)
+    config["credit"]["output"] = f"{reward_unit}_reward"
+
+    optimizer = config.setdefault("optimizer", {})
+    optimizer["name"] = "grpo"
+    optimizer["advantage_mode"] = reward_unit
+    optimizer["update_impl"] = "standard_grpo"
 
     training = config.setdefault("training", {})
-    training["advantage_mode"] = "trajectory" if kernel in {"grpo", "trajectory", "trajectory_uniform"} else "step"
+    training["optimizer"] = "grpo"
+    training["grpo_reward_unit"] = reward_unit
+    training["advantage_mode"] = reward_unit
 
     policy = config.setdefault("policy", {})
     if model_id:
         policy["model_id"] = model_id
     if str(policy.get("kind", "")).lower() in {"hf", "hf_lora", "lora"}:
         policy.setdefault("action_selection", "score")
-        policy.setdefault("update_score_mode", "selected")
+        policy.setdefault("update_score_mode", "full_distribution")
         policy.setdefault("action_score_batch_size", 2)
     return config
 
@@ -151,6 +194,8 @@ def validate_config(config: dict[str, Any], *, require_files: bool) -> list[str]
         errors.append("training.group_size must be >= 1")
     if int(config.get("environment", {}).get("max_steps", 0)) <= 0:
         errors.append("environment.max_steps must be > 0")
+    if int(config.get("evaluation", {}).get("num_eval_tasks", 1)) <= 0:
+        errors.append("evaluation.num_eval_tasks must be > 0")
     return errors
 
 
@@ -184,6 +229,8 @@ def summarize_run(run_dir: Path, *, kernel: str, seed: int, status: str) -> dict
         "num_events": train_row.get("num_events", ""),
         "num_assignments": train_row.get("num_assignments", ""),
         "entropy": train_row.get("entropy", ""),
+        "eval_split": eval_row.get("eval_split", ""),
+        "num_eval_tasks": eval_row.get("num_eval_tasks", ""),
     }
 
 
@@ -195,6 +242,12 @@ def main() -> None:
     parser.add_argument("--seeds", nargs="*", default=None)
     parser.add_argument("--alfworld-config", default=None)
     parser.add_argument("--model-id", default=None)
+    parser.add_argument("--train-split", default=None, help="ALFWorld split used for policy updates, e.g. train.")
+    parser.add_argument("--eval-split", default=None, help="ALFWorld split used for held-out evaluation.")
+    parser.add_argument("--num-train-tasks", type=int, default=None)
+    parser.add_argument("--num-eval-tasks", type=int, default=None)
+    parser.add_argument("--max-steps", type=int, default=None)
+    parser.add_argument("--clean-eval", action="store_true", help="Disable async perturbations during benchmark evaluation.")
     parser.add_argument("--dry-run", action="store_true", help="Only write generated configs and validate them.")
     parser.add_argument("--overwrite", action="store_true", help="Rerun configs even if eval_metrics.csv exists.")
     args = parser.parse_args()
@@ -215,6 +268,12 @@ def main() -> None:
                 output_root=output_root,
                 alfworld_config=args.alfworld_config,
                 model_id=args.model_id,
+                train_split=args.train_split,
+                eval_split=args.eval_split,
+                num_train_tasks=args.num_train_tasks,
+                num_eval_tasks=args.num_eval_tasks,
+                max_steps=args.max_steps,
+                clean_eval=args.clean_eval,
             )
             errors = validate_config(config, require_files=not args.dry_run)
             config_path = generated_dir / f"{kernel}_seed{seed}.json"

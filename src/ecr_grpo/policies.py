@@ -95,6 +95,9 @@ class TabularSoftmaxPolicy:
         denom = max(1, len(steps))
         return {"policy_loss": total_loss / denom, "entropy": total_entropy / denom}
 
+    def update_grpo(self, steps: list[StepRecord], lr: float) -> dict[str, float]:
+        return self.update(steps, lr=lr)
+
     def _new_logits(self) -> dict[str, float]:
         return {
             action: self.rng.uniform(-self.init_scale, self.init_scale)
@@ -142,7 +145,7 @@ def build_policy(config: dict, action_space: list[str], seed: int = 0):
             action_score_normalization=str(policy_cfg.get("action_score_normalization", "mean")),
             action_score_calibration=str(policy_cfg.get("action_score_calibration", "pmi")),
             use_chat_template=bool(policy_cfg.get("use_chat_template", True)),
-            update_score_mode=str(policy_cfg.get("update_score_mode", "selected")),
+            update_score_mode=str(policy_cfg.get("update_score_mode", "full_distribution")),
             clip_eps=float(config.get("training", {}).get("clip_eps", 0.2)),
             grad_accum_steps=int(config.get("training", {}).get("grad_accum_steps", 1)),
             max_grad_norm=float(config.get("training", {}).get("max_grad_norm", 1.0)),

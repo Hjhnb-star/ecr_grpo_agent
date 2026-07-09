@@ -1,0 +1,10 @@
+node_modules/
+.venv/
+.venv-copaper/
+third_party/
+.env
+.env.local
+package.json
+bun.lock
+bun.lockb
+

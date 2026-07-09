@@ -1,0 +1,61 @@
+{
+  "project": {
+    "name": "ECR-GRPO: Event-Conditioned Credit Refill GRPO",
+    "created_at": "2026-07-08T13:34:40.560301+00:00",
+    "domain": "long-horizon LLM agent reinforcement learning"
+  },
+  "phases": {
+    "storyline": {
+      "status": "complete",
+      "completed_at": "2026-07-08T15:19:33.901909+00:00",
+      "metadata": {}
+    },
+    "literature": {
+      "status": "complete",
+      "completed_at": "2026-07-08T15:34:44.695627+00:00",
+      "catalog_path": "relatedwork/literature.json",
+      "papers_found": 13,
+      "papers_downloaded": 13,
+      "download_failures": 0,
+      "summaries_done": 13,
+      "cross_index_built": true
+    },
+    "discussion": {
+      "status": "complete",
+      "completed_at": "2026-07-08T15:36:07.207094+00:00",
+      "rounds": 0,
+      "dimensions_covered": []
+    },
+    "experiments": {
+      "status": "complete",
+      "completed_at": "2026-07-08T15:38:44.038997+00:00",
+      "skip_reason": null,
+      "data_files": []
+    },
+    "writing": {
+      "status": "complete",
+      "completed_at": "2026-07-08T15:42:15.605425+00:00",
+      "sections_complete": 0,
+      "sections_total": 0
+    },
+    "latex_review": {
+      "status": "complete",
+      "completed_at": "2026-07-08T16:15:29.233367+00:00",
+      "review_rounds": 0,
+      "comments_addressed": 0,
+      "comments_total": 0,
+      "skip_reason": "No LaTeX .tex template under templates/latex; wrote docs/ecr_grpo_latex_readiness.md instead."
+    }
+  },
+  "current_phase": "latex_review",
+  "event_log_path": ".agents/events.jsonl",
+  "git": {
+    "auto_commit": false,
+    "identity": {
+      "role": "assistant",
+      "git_name": "CoPaper Bot",
+      "git_email": "bot@copaper.dev"
+    }
+  },
+  "checkers": {}
+}

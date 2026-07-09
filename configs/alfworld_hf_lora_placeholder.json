@@ -5,9 +5,12 @@
   "environment": {
     "name": "alfworld",
     "alfworld_config": "/home/hjh/hjh_playbook/alfworld/configs/base_config.yaml",
-    "split": "eval_out_of_distribution",
+    "split": "train",
+    "train_split": "train",
+    "eval_split": "eval_out_of_distribution",
     "reuse_env": true,
     "num_tasks": 4,
+    "num_train_tasks": 4,
     "max_steps": 15,
     "shaping": {
       "enabled": true,
@@ -41,12 +44,23 @@
     "terminal_reward_delay": 2
   },
   "credit": {
-    "kernel": "dependency",
+    "kernel": "gated_evidence",
+    "output": "step_reward",
     "lambda": 0.25,
-    "max_pending_age": 10,
+    "local_lambda": 1.0,
+    "max_pending_age": 16,
     "timeout_penalty": -0.2,
-    "tool_match_bonus": 1.2,
-    "subgoal_match_bonus": 1.2
+    "temporal_weight": 0.5,
+    "exact_step_weight": 0.0,
+    "tool_weight": 0.5,
+    "subgoal_weight": 0.5,
+    "tag_weight": 2.0,
+    "text_weight": 1.0
+  },
+  "optimizer": {
+    "name": "grpo",
+    "advantage_mode": "step",
+    "update_impl": "standard_grpo"
   },
   "policy": {
     "kind": "hf_lora",
@@ -59,7 +73,10 @@
     "device": null,
     "max_new_tokens": 16,
     "temperature": 0.7,
-    "top_p": 0.95
+    "top_p": 0.95,
+    "action_selection": "score",
+    "action_score_batch_size": 2,
+    "update_score_mode": "full_distribution"
   },
   "training": {
     "num_updates": 20,
@@ -68,11 +85,24 @@
     "learning_rate": 5.0e-6,
     "clip_eps": 0.2,
     "grad_accum_steps": 1,
-    "checkpoint_every": 5
+    "checkpoint_every": 5,
+    "optimizer": "grpo",
+    "grpo_reward_unit": "step",
+    "advantage_mode": "step"
   },
   "evaluation": {
+    "split": "eval_out_of_distribution",
     "every_updates": 5,
     "num_eval_tasks": 4,
+    "async": {
+      "enabled": false,
+      "delay_prob": 0.0,
+      "max_delay_steps": 0,
+      "timeout_prob": 0.0,
+      "interruption_prob": 0.0,
+      "missing_reward_prob": 0.0,
+      "terminal_reward_delay": 0
+    },
     "delay_sweep": [0.0]
   }
 }

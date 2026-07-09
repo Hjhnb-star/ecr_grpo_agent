@@ -1,0 +1,8 @@
+asynchronous credit assignment long horizon agents
+event conditioned reward refill policy gradient
+step level process supervision language agents
+delayed reward reinforcement learning LLM agents
+GRPO group relative advantage agent training
+credit assignment quality metric missing reward
+recency uniform credit allocation baselines RL
+synthetic diagnostic environment agent credit attribution

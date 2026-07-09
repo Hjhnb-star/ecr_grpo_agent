@@ -1,0 +1,696 @@
+{
+  "tech_points": {
+    "1._文献核心_insight_/_contribution": [
+      "arjonamedina2018rudder",
+      "cobbe2021verifiers",
+      "deepseekai2025deepseekr1",
+      "lightman2023verify",
+      "luo2025agentlightning",
+      "schulman2017ppo",
+      "shao2024deepseekmath",
+      "shinn2023reflexion",
+      "shridhar2020alfworld",
+      "yao2022react",
+      "yao2022webshop",
+      "zhou2023lats",
+      "zhou2026demystifyinggrpo"
+    ],
+    "2._与本工作的关系": [
+      "arjonamedina2018rudder",
+      "cobbe2021verifiers",
+      "deepseekai2025deepseekr1",
+      "lightman2023verify",
+      "luo2025agentlightning",
+      "schulman2017ppo",
+      "shao2024deepseekmath",
+      "shinn2023reflexion",
+      "shridhar2020alfworld",
+      "yao2022react",
+      "yao2022webshop",
+      "zhou2023lats",
+      "zhou2026demystifyinggrpo"
+    ],
+    "3._讨论": [
+      "arjonamedina2018rudder",
+      "cobbe2021verifiers",
+      "deepseekai2025deepseekr1",
+      "lightman2023verify",
+      "luo2025agentlightning",
+      "schulman2017ppo",
+      "shao2024deepseekmath",
+      "shinn2023reflexion",
+      "shridhar2020alfworld",
+      "yao2022react",
+      "yao2022webshop",
+      "zhou2023lats",
+      "zhou2026demystifyinggrpo"
+    ],
+    "4._总结": [
+      "arjonamedina2018rudder",
+      "cobbe2021verifiers",
+      "deepseekai2025deepseekr1",
+      "lightman2023verify",
+      "luo2025agentlightning",
+      "schulman2017ppo",
+      "shao2024deepseekmath",
+      "shinn2023reflexion",
+      "shridhar2020alfworld",
+      "yao2022react",
+      "yao2022webshop",
+      "zhou2023lats",
+      "zhou2026demystifyinggrpo"
+    ],
+    "发表会议/期刊（如果有）": [
+      "arjonamedina2018rudder",
+      "cobbe2021verifiers",
+      "deepseekai2025deepseekr1",
+      "lightman2023verify",
+      "luo2025agentlightning",
+      "schulman2017ppo",
+      "shao2024deepseekmath",
+      "shinn2023reflexion",
+      "shridhar2020alfworld",
+      "yao2022react",
+      "yao2022webshop",
+      "zhou2023lats",
+      "zhou2026demystifyinggrpo"
+    ],
+    "奖励再分布": [
+      "arjonamedina2018rudder"
+    ],
+    "回报分解": [
+      "arjonamedina2018rudder"
+    ],
+    "相似点": [
+      "arjonamedina2018rudder"
+    ],
+    "不同点": [
+      "arjonamedina2018rudder"
+    ],
+    "完整的轨迹和最终的奖励信号": [
+      "arjonamedina2018rudder"
+    ],
+    "弱证据链接": [
+      "arjonamedina2018rudder"
+    ],
+    "验证器（verifier）": [
+      "cobbe2021verifiers"
+    ],
+    "gsm8k": [
+      "cobbe2021verifiers"
+    ],
+    "30倍模型规模扩展": [
+      "cobbe2021verifiers"
+    ],
+    "token_level_verifier": [
+      "cobbe2021verifiers"
+    ],
+    "用于评估部分解质量的密集价值函数": [
+      "cobbe2021verifiers"
+    ],
+    "将轨迹级稀疏奖励精细分配到历史步骤": [
+      "cobbe2021verifiers"
+    ],
+    "延迟、缺失、中断、非本地、弱证据的异步反馈事件": [
+      "cobbe2021verifiers"
+    ],
+    "异步信用事件到步骤的对齐": [
+      "cobbe2021verifiers"
+    ],
+    "训练数据构建": [
+      "cobbe2021verifiers"
+    ],
+    "评估对象": [
+      "cobbe2021verifiers"
+    ],
+    "部署时机": [
+      "cobbe2021verifiers"
+    ],
+    "纯强化学习（rl）自主演化": [
+      "deepseekai2025deepseekr1"
+    ],
+    "核心贡献在于证明了无需显式教学推理过程，仅通过奖励正确结果即可解锁预训练模型的推理潜力": [
+      "deepseekai2025deepseekr1"
+    ],
+    "核心优化算法（grpo）和长程任务": [
+      "deepseekai2025deepseekr1"
+    ],
+    "奖励与信度分配的根本假设": [
+      "deepseekai2025deepseekr1"
+    ],
+    "共同点": [
+      "deepseekai2025deepseekr1"
+    ],
+    "关键差异与动机": [
+      "deepseekai2025deepseekr1"
+    ],
+    "奖励简化": [
+      "deepseekai2025deepseekr1"
+    ],
+    "无误（ground_truth）": [
+      "deepseekai2025deepseekr1"
+    ],
+    "我们的工作（ecr_grpo）正是要解决deepseek_r1回避掉的奖励难题": [
+      "deepseekai2025deepseekr1"
+    ],
+    "延迟、部分、弱证据、非局部且可能中断的异步事件流": [
+      "deepseekai2025deepseekr1"
+    ],
+    "研究更复杂的异步信度分配（如ecr_grpo）的必要性和前沿性": [
+      "deepseekai2025deepseekr1"
+    ],
+    "优点": [
+      "deepseekai2025deepseekr1",
+      "shinn2023reflexion"
+    ],
+    "局限性与对我们工作的动机支撑": [
+      "deepseekai2025deepseekr1"
+    ],
+    "奖励单一性与即时反馈缺失": [
+      "deepseekai2025deepseekr1"
+    ],
+    "粗粒度轨迹级rl": [
+      "deepseekai2025deepseekr1"
+    ],
+    "无法处理部分观察和异步反馈": [
+      "deepseekai2025deepseekr1"
+    ],
+    "缺失或弱证据的异步奖励事件": [
+      "deepseekai2025deepseekr1"
+    ],
+    "缺乏非局部信度分配机制": [
+      "deepseekai2025deepseekr1"
+    ],
+    "事件条件化信度填充（evidence_conditioned_credit_refill）": [
+      "deepseekai2025deepseekr1"
+    ],
+    "对“奖励攻击”的规避而非解决": [
+      "deepseekai2025deepseekr1"
+    ],
+    "如何为无法轻易获得完整标量奖励的长程交互过程分配训练信号。": [
+      "deepseekai2025deepseekr1"
+    ],
+    "异步、部分、弱证据反馈的信度分配": [
+      "deepseekai2025deepseekr1"
+    ],
+    "过程监督训练出的奖励模型（prm）显著优于结果监督模型（orm）": [
+      "lightman2023verify"
+    ],
+    "过程监督提供了更精确的信用分配信号": [
+      "lightman2023verify"
+    ],
+    "延迟、部分、弱证据、非局部的异步事件流": [
+      "lightman2023verify"
+    ],
+    "这种即时、对齐的步骤级真实标签并不存在": [
+      "lightman2023verify"
+    ],
+    "即使结果标签也可通过更强模型提升质量": [
+      "lightman2023verify"
+    ],
+    "优势": [
+      "lightman2023verify",
+      "luo2025agentlightning",
+      "shao2024deepseekmath",
+      "yao2022webshop",
+      "zhou2023lats",
+      "zhou2026demystifyinggrpo"
+    ],
+    "局限": [
+      "lightman2023verify",
+      "shao2024deepseekmath",
+      "zhou2026demystifyinggrpo"
+    ],
+    "每个步骤的正确性标签已知": [
+      "lightman2023verify"
+    ],
+    "如何将类似的过程监督信号融入策略_rl": [
+      "lightman2023verify"
+    ],
+    "缺少即时步骤标签": [
+      "lightman2023verify"
+    ],
+    "agent_lightning": [
+      "luo2025agentlightning"
+    ],
+    "马尔可夫决策过程_(mdp)": [
+      "luo2025agentlightning"
+    ],
+    "数据接口": [
+      "luo2025agentlightning"
+    ],
+    "层次化_rl_算法_lightningrl": [
+      "luo2025agentlightning"
+    ],
+    "信用分配模块": [
+      "luo2025agentlightning"
+    ],
+    "训练‑智能体分离架构": [
+      "luo2025agentlightning"
+    ],
+    "ecr‑grpo": [
+      "luo2025agentlightning"
+    ],
+    "信用分配机制": [
+      "luo2025agentlightning"
+    ],
+    "相同点": [
+      "luo2025agentlightning"
+    ],
+    "关键差异": [
+      "luo2025agentlightning",
+      "yao2022webshop"
+    ],
+    "奖励是同步、完整的终结信号": [
+      "luo2025agentlightning"
+    ],
+    "反馈流异步、部分缺失、弱证据及非局部性": [
+      "luo2025agentlightning"
+    ],
+    "异步事件流": [
+      "luo2025agentlightning",
+      "zhou2023lats"
+    ],
+    "仍处于待定状态的历史步": [
+      "luo2025agentlightning"
+    ],
+    "完全解耦设计": [
+      "luo2025agentlightning"
+    ],
+    "局限性（与我们工作的连接点）": [
+      "luo2025agentlightning"
+    ],
+    "均一分配": [
+      "luo2025agentlightning"
+    ],
+    "延迟、缺失或非局部": [
+      "luo2025agentlightning"
+    ],
+    "同步且局部": [
+      "luo2025agentlightning"
+    ],
+    "晚于当前步": [
+      "luo2025agentlightning"
+    ],
+    "事后到达且仅携带弱证据": [
+      "luo2025agentlightning"
+    ],
+    "确定、即时": [
+      "luo2025agentlightning"
+    ],
+    "事件驱动的异步信用填充": [
+      "luo2025agentlightning"
+    ],
+    "数学预训练": [
+      "shao2024deepseekmath"
+    ],
+    "强化学习": [
+      "shao2024deepseekmath"
+    ],
+    "reflexion": [
+      "shinn2023reflexion"
+    ],
+    "自然语言反思总结": [
+      "shinn2023reflexion"
+    ],
+    "信用分配": [
+      "shinn2023reflexion"
+    ],
+    "共同问题": [
+      "shinn2023reflexion"
+    ],
+    "解决方案差异": [
+      "shinn2023reflexion"
+    ],
+    "将环境反馈转化为口头反思": [
+      "shinn2023reflexion"
+    ],
+    "不更新模型参数": [
+      "shinn2023reflexion"
+    ],
+    "针对异步事件流的不足": [
+      "shinn2023reflexion"
+    ],
+    "没有处理异步、缺失、中断、非局部的事件流": [
+      "shinn2023reflexion"
+    ],
+    "精确重填到历史步骤": [
+      "shinn2023reflexion"
+    ],
+    "局限及其如何激励我们的工作": [
+      "shinn2023reflexion"
+    ],
+    "事件到步骤的异步信用重填": [
+      "shinn2023reflexion"
+    ],
+    "缺乏策略学习机制": [
+      "yao2022react"
+    ],
+    "异步反馈未建模": [
+      "yao2022react"
+    ],
+    "提示工程依赖": [
+      "yao2022react"
+    ],
+    "环境设计": [
+      "yao2022webshop"
+    ],
+    "建模方法": [
+      "yao2022webshop"
+    ],
+    "实验分析": [
+      "yao2022webshop"
+    ],
+    "相似性": [
+      "yao2022webshop"
+    ],
+    "对本工作的启示": [
+      "yao2022webshop"
+    ],
+    "局限性（对本工作动机的支撑）": [
+      "yao2022webshop"
+    ],
+    "奖励信号单一且同步": [
+      "yao2022webshop"
+    ],
+    "缺少非本地信用分配": [
+      "yao2022webshop"
+    ],
+    "无异步事件模拟": [
+      "yao2022webshop"
+    ],
+    "强依赖_il_预热": [
+      "yao2022webshop"
+    ],
+    "lats_(language_agent_tree_search)": [
+      "zhou2023lats"
+    ],
+    "利用环境反馈改进序列决策": [
+      "zhou2023lats"
+    ],
+    "反馈类型": [
+      "zhou2023lats"
+    ],
+    "完整、同步、即时": [
+      "zhou2023lats"
+    ],
+    "信用分配方式": [
+      "zhou2023lats"
+    ],
+    "训练_vs._推理": [
+      "zhou2023lats"
+    ],
+    "即时的、结构化的环境反馈": [
+      "zhou2023lats"
+    ],
+    "局限性": [
+      "zhou2023lats"
+    ],
+    "反馈假设过于理想": [
+      "zhou2023lats"
+    ],
+    "信用分配粗粒度": [
+      "zhou2023lats"
+    ],
+    "计算成本": [
+      "zhou2023lats"
+    ],
+    "事件流": [
+      "zhou2023lats"
+    ],
+    "oracle_性质": [
+      "zhou2026demystifyinggrpo"
+    ],
+    "最优性": [
+      "zhou2026demystifyinggrpo"
+    ],
+    "scaling_law": [
+      "zhou2026demystifyinggrpo"
+    ],
+    "异步、延迟、部分、弱证据、非局部": [
+      "zhou2026demystifyinggrpo"
+    ],
+    "对我们方法的激励": [
+      "zhou2026demystifyinggrpo"
+    ]
+  },
+  "papers": {
+    "arjonamedina2018rudder": {
+      "title": "RUDDER: Return Decomposition for Delayed Rewards",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "奖励再分布",
+        "回报分解",
+        "相似点",
+        "不同点",
+        "完整的轨迹和最终的奖励信号",
+        "弱证据链接"
+      ]
+    },
+    "cobbe2021verifiers": {
+      "title": "Training Verifiers to Solve Math Word Problems",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "验证器（verifier）",
+        "GSM8K",
+        "30倍模型规模扩展",
+        "token-level verifier",
+        "用于评估部分解质量的密集价值函数",
+        "将轨迹级稀疏奖励精细分配到历史步骤",
+        "延迟、缺失、中断、非本地、弱证据的异步反馈事件",
+        "异步信用事件到步骤的对齐",
+        "训练数据构建",
+        "评估对象",
+        "部署时机"
+      ]
+    },
+    "deepseekai2025deepseekr1": {
+      "title": "DeepSeek-R1: Incentivizing Reasoning Capability in LLMs via Reinforcement Learning",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "纯强化学习（RL）自主演化",
+        "核心贡献在于证明了无需显式教学推理过程，仅通过奖励正确结果即可解锁预训练模型的推理潜力",
+        "核心优化算法（GRPO）和长程任务",
+        "奖励与信度分配的根本假设",
+        "共同点",
+        "关键差异与动机",
+        "奖励简化",
+        "无误（ground-truth）",
+        "我们的工作（ECR-GRPO）正是要解决DeepSeek-R1回避掉的奖励难题",
+        "延迟、部分、弱证据、非局部且可能中断的异步事件流",
+        "研究更复杂的异步信度分配（如ECR-GRPO）的必要性和前沿性",
+        "优点",
+        "局限性与对我们工作的动机支撑",
+        "奖励单一性与即时反馈缺失",
+        "粗粒度轨迹级RL",
+        "无法处理部分观察和异步反馈",
+        "缺失或弱证据的异步奖励事件",
+        "缺乏非局部信度分配机制",
+        "事件条件化信度填充（Evidence-Conditioned Credit Refill）",
+        "对“奖励攻击”的规避而非解决",
+        "如何为无法轻易获得完整标量奖励的长程交互过程分配训练信号。",
+        "异步、部分、弱证据反馈的信度分配"
+      ]
+    },
+    "lightman2023verify": {
+      "title": "Let's Verify Step by Step",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "过程监督训练出的奖励模型（PRM）显著优于结果监督模型（ORM）",
+        "过程监督提供了更精确的信用分配信号",
+        "延迟、部分、弱证据、非局部的异步事件流",
+        "这种即时、对齐的步骤级真实标签并不存在",
+        "即使结果标签也可通过更强模型提升质量",
+        "优势",
+        "局限",
+        "每个步骤的正确性标签已知",
+        "如何将类似的过程监督信号融入策略 RL",
+        "缺少即时步骤标签"
+      ]
+    },
+    "luo2025agentlightning": {
+      "title": "Agent Lightning: Train ANY AI Agents with Reinforcement Learning",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "Agent Lightning",
+        "马尔可夫决策过程 (MDP)",
+        "数据接口",
+        "层次化 RL 算法 LightningRL",
+        "信用分配模块",
+        "训练‑智能体分离架构",
+        "ECR‑GRPO",
+        "信用分配机制",
+        "相同点",
+        "关键差异",
+        "奖励是同步、完整的终结信号",
+        "反馈流异步、部分缺失、弱证据及非局部性",
+        "异步事件流",
+        "仍处于待定状态的历史步",
+        "优势",
+        "完全解耦设计",
+        "局限性（与我们工作的连接点）",
+        "均一分配",
+        "延迟、缺失或非局部",
+        "同步且局部",
+        "晚于当前步",
+        "事后到达且仅携带弱证据",
+        "确定、即时",
+        "事件驱动的异步信用填充"
+      ]
+    },
+    "schulman2017ppo": {
+      "title": "Proximal Policy Optimization Algorithms",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）"
+      ]
+    },
+    "shao2024deepseekmath": {
+      "title": "DeepSeekMath: Pushing the Limits of Mathematical Reasoning in Open Language Models",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "数学预训练",
+        "强化学习",
+        "优势",
+        "局限"
+      ]
+    },
+    "shinn2023reflexion": {
+      "title": "Reflexion: Language Agents with Verbal Reinforcement Learning",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "Reflexion",
+        "自然语言反思总结",
+        "信用分配",
+        "共同问题",
+        "解决方案差异",
+        "将环境反馈转化为口头反思",
+        "不更新模型参数",
+        "针对异步事件流的不足",
+        "没有处理异步、缺失、中断、非局部的事件流",
+        "精确重填到历史步骤",
+        "优点",
+        "局限及其如何激励我们的工作",
+        "事件到步骤的异步信用重填"
+      ]
+    },
+    "shridhar2020alfworld": {
+      "title": "ALFWorld: Aligning Text and Embodied Environments for Interactive Learning",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）"
+      ]
+    },
+    "yao2022react": {
+      "title": "ReAct: Synergizing Reasoning and Acting in Language Models",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "缺乏策略学习机制",
+        "异步反馈未建模",
+        "提示工程依赖"
+      ]
+    },
+    "yao2022webshop": {
+      "title": "WebShop: Towards Scalable Real-World Web Interaction with Grounded Language Agents",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "环境设计",
+        "建模方法",
+        "实验分析",
+        "相似性",
+        "关键差异",
+        "对本工作的启示",
+        "优势",
+        "局限性（对本工作动机的支撑）",
+        "奖励信号单一且同步",
+        "缺少非本地信用分配",
+        "无异步事件模拟",
+        "强依赖 IL 预热"
+      ]
+    },
+    "zhou2023lats": {
+      "title": "Language Agent Tree Search Unifies Reasoning, Acting, and Planning in Language Models",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "LATS (Language Agent Tree Search)",
+        "利用环境反馈改进序列决策",
+        "反馈类型",
+        "完整、同步、即时",
+        "信用分配方式",
+        "训练 vs. 推理",
+        "即时的、结构化的环境反馈",
+        "优势",
+        "局限性",
+        "反馈假设过于理想",
+        "异步事件流",
+        "信用分配粗粒度",
+        "计算成本",
+        "事件流"
+      ]
+    },
+    "zhou2026demystifyinggrpo": {
+      "title": "Demystifying Group Relative Policy Optimization: Its Policy Gradient is a U-Statistic",
+      "tech_points": [
+        "1. 文献核心 Insight / Contribution",
+        "2. 与本工作的关系",
+        "3. 讨论",
+        "4. 总结",
+        "发表会议/期刊（如果有）",
+        "oracle 性质",
+        "最优性",
+        "scaling law",
+        "异步、延迟、部分、弱证据、非局部",
+        "优势",
+        "局限",
+        "对我们方法的激励"
+      ]
+    }
+  },
+  "last_updated": "2026-07-08T15:32:58.730545+00:00"
+}

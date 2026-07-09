@@ -1,7 +1,14 @@
 from __future__ import annotations
 
+import os
+import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
+
+SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.append(str(SCRIPT_DIR))
 
 from ecr_grpo.advantages import compute_group_advantages
 from ecr_grpo.analyze_credit import event_target_action, is_non_local_event
@@ -16,9 +23,16 @@ from ecr_grpo.credit_kernels import (
 )
 from ecr_grpo.envs.async_wrapper import AsyncEnvWrapper
 from ecr_grpo.envs.alfworld_wrapper import ALFWorldEnv
+from ecr_grpo.grpo_adapter import (
+    assign_grpo_advantages,
+    build_step_grpo_samples,
+    build_trajectory_grpo_samples,
+    normalize_reward_unit,
+)
 from ecr_grpo.rollout import collect_rollout_group
 from ecr_grpo.run_alfworld import build_run_config, validate_config
-from ecr_grpo.types import AsyncEvent, PolicyAction, StepRecord
+from ecr_grpo.types import AsyncEvent, PolicyAction, RolloutGroup, StepRecord
+from stage_b_plan import normalize_stage_b_config
 
 
 def step(step_id: int, action: str = "a", subgoal: str = "a") -> StepRecord:
@@ -234,6 +248,69 @@ class CoreTests(unittest.TestCase):
         self.assertAlmostEqual(steps[2].advantage, steps[3].advantage)
         self.assertGreater(steps[0].advantage, steps[2].advantage)
 
+    def test_step_grpo_groups_by_prompt_not_whole_task(self) -> None:
+        steps = [step(0), step(1), step(2)]
+        for item in steps:
+            item.group_id = "upd_0001_task"
+        steps[0].episode_id = "ep_a"
+        steps[1].episode_id = "ep_b"
+        steps[2].episode_id = "ep_c"
+        steps[0].observation = "same prompt"
+        steps[1].observation = "same prompt"
+        steps[2].observation = "different prompt"
+        steps[0].observation_key = "prompt_same"
+        steps[1].observation_key = "prompt_same"
+        steps[2].observation_key = "prompt_other"
+        steps[0].filled_credit = 0.0
+        steps[1].filled_credit = 2.0
+        steps[2].filled_credit = 100.0
+
+        samples, stats = assign_grpo_advantages(steps, reward_unit="step")
+
+        self.assertEqual(len(samples), 3)
+        self.assertEqual(stats["num_grpo_groups"], 2.0)
+        self.assertLess(steps[0].advantage, 0.0)
+        self.assertGreater(steps[1].advantage, 0.0)
+        self.assertEqual(steps[2].advantage, 0.0)
+
+    def test_step_grpo_sample_exposes_reward_adapter_boundary(self) -> None:
+        item = step(0, action="open_box")
+        item.filled_credit = 0.5
+        samples = build_step_grpo_samples([item])
+
+        self.assertEqual(samples[0].completion, "open_box")
+        self.assertAlmostEqual(samples[0].reward, 0.5)
+        self.assertEqual(samples[0].unit, "step")
+        self.assertIn("Available actions", samples[0].prompt)
+        self.assertEqual(samples[0].metadata["optimizer_boundary"], "reward_construction_only")
+
+    def test_trajectory_grpo_sample_uses_refilled_episode_return(self) -> None:
+        steps = [step(0, action="find_key"), step(1, action="open_box")]
+        steps[0].filled_credit = 0.25
+        steps[1].filled_credit = 0.75
+        group = RolloutGroup(
+            group_id="grp",
+            task_id="task",
+            episodes=["ep"],
+            steps=steps,
+            events=[],
+            assignments=[],
+        )
+
+        samples = build_trajectory_grpo_samples(group)
+
+        self.assertEqual(len(samples), 1)
+        self.assertEqual(samples[0].unit, "trajectory")
+        self.assertEqual(samples[0].group_id, "grp")
+        self.assertAlmostEqual(samples[0].reward, 1.0)
+        self.assertEqual(samples[0].completion, "find_key\nopen_box")
+        self.assertIn("Available actions", samples[0].prompt)
+        self.assertEqual(samples[0].metadata["reward_source"], "ecr_refilled_trajectory_return")
+
+    def test_reward_unit_aliases_support_plugin_config_terms(self) -> None:
+        self.assertEqual(normalize_reward_unit("step_reward"), "step")
+        self.assertEqual(normalize_reward_unit("trajectory_reward"), "trajectory")
+
     def test_alfworld_adapter_handles_batched_infos(self) -> None:
         class MockALFWorldRawEnv:
             def reset(self):
@@ -307,15 +384,77 @@ class CoreTests(unittest.TestCase):
             "policy": {"kind": "hf_lora", "model_id": "Qwen/Qwen2.5-1.5B-Instruct"},
             "training": {"group_size": 1},
         }
-        gated = build_run_config(base, kernel="gated", seed=7, output_root=Path("runs/alf"))
+        gated = build_run_config(
+            base,
+            kernel="gated",
+            seed=7,
+            output_root=Path("runs/alf"),
+            train_split="train",
+            eval_split="eval_out_of_distribution",
+            num_train_tasks=32,
+            num_eval_tasks=12,
+            max_steps=40,
+            clean_eval=True,
+        )
         grpo = build_run_config(base, kernel="grpo", seed=7, output_root=Path("runs/alf"))
 
+        self.assertEqual(gated["environment"]["split"], "train")
+        self.assertEqual(gated["environment"]["train_split"], "train")
+        self.assertEqual(gated["environment"]["eval_split"], "eval_out_of_distribution")
+        self.assertEqual(gated["environment"]["num_train_tasks"], 32)
+        self.assertEqual(gated["environment"]["max_steps"], 40)
+        self.assertEqual(gated["evaluation"]["split"], "eval_out_of_distribution")
+        self.assertEqual(gated["evaluation"]["num_eval_tasks"], 12)
+        self.assertFalse(gated["evaluation"]["async"]["enabled"])
+        self.assertEqual(gated["evaluation"]["async"]["delay_prob"], 0.0)
         self.assertEqual(gated["credit"]["kernel"], "gated_evidence")
+        self.assertEqual(gated["credit"]["output"], "step_reward")
+        self.assertEqual(gated["optimizer"]["name"], "grpo")
+        self.assertEqual(gated["optimizer"]["advantage_mode"], "step")
+        self.assertEqual(gated["optimizer"]["update_impl"], "standard_grpo")
         self.assertEqual(gated["training"]["advantage_mode"], "step")
+        self.assertEqual(gated["training"]["optimizer"], "grpo")
+        self.assertEqual(gated["training"]["grpo_reward_unit"], "step")
         self.assertFalse(gated["async"]["use_oracle_event_links"])
         self.assertEqual(grpo["credit"]["kernel"], "trajectory_uniform")
+        self.assertEqual(grpo["credit"]["output"], "trajectory_reward")
+        self.assertEqual(grpo["optimizer"]["name"], "grpo")
+        self.assertEqual(grpo["optimizer"]["advantage_mode"], "trajectory")
         self.assertEqual(grpo["training"]["advantage_mode"], "trajectory")
+        self.assertEqual(grpo["training"]["optimizer"], "grpo")
+        self.assertEqual(grpo["training"]["grpo_reward_unit"], "trajectory")
+        self.assertEqual(gated["policy"]["update_score_mode"], "full_distribution")
         self.assertEqual(validate_config(gated, require_files=False), [])
+
+    def test_stage_b_hf_configs_default_to_distribution_ratio(self) -> None:
+        config = {
+            "environment": {"non_local_credit": {}},
+            "async": {},
+            "policy": {"kind": "hf_lora", "model_id": "Qwen/Qwen2.5-1.5B-Instruct"},
+            "training": {},
+            "evaluation": {},
+        }
+
+        with patch.dict(os.environ, {}, clear=True):
+            normalize_stage_b_config(config, seed=7, lag=2, reward=0.4)
+
+        self.assertEqual(config["policy"]["action_selection"], "score")
+        self.assertEqual(config["policy"]["update_score_mode"], "full_distribution")
+        self.assertEqual(config["training"]["optimizer"], "grpo")
+
+    def test_stage_b_hf_update_mode_env_override(self) -> None:
+        config = {
+            "environment": {"non_local_credit": {}},
+            "async": {},
+            "policy": {"kind": "hf_lora", "model_id": "Qwen/Qwen2.5-1.5B-Instruct"},
+            "training": {},
+            "evaluation": {},
+        }
+
+        with patch.dict(os.environ, {"ECR_GRPO_UPDATE_SCORE_MODE": "selected"}, clear=True):
+            normalize_stage_b_config(config, seed=7, lag=2, reward=0.4)
+
+        self.assertEqual(config["policy"]["update_score_mode"], "selected")
 
     def test_rollout_records_pre_step_action_space(self) -> None:
         class DynamicActionEnv:

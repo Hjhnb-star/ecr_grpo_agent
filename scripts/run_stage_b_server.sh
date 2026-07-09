@@ -13,6 +13,10 @@ KERNELS="${KERNELS:-grpo recency evidence gated}"
 export OVERWRITE
 
 echo "[1/6] Regenerate Stage B configs with seeds: ${SEEDS}"
+echo "[config] MODEL_ID=${MODEL_ID:-${ECR_GRPO_MODEL_ID:-<config-default>}}"
+echo "[config] KERNELS=${KERNELS} GPU_IDS=${GPU_IDS} JOBS=${JOBS} OVERWRITE=${OVERWRITE}"
+echo "[config] OPTIMIZER=grpo REWARD_UNIT=trajectory for grpo, step for recency/evidence/gated"
+echo "[config] ACTION_SCORE_BATCH_SIZE=${ECR_GRPO_ACTION_SCORE_BATCH_SIZE:-<config-default>} UPDATE_MODE=${ECR_GRPO_UPDATE_SCORE_MODE:-full_distribution} LR=${ECR_GRPO_STAGE_B_LEARNING_RATE:-<config-default>} TRACE=${ECR_GRPO_TRACE_NUM_TASKS:-<config-default>} RANK=${ECR_GRPO_RANK_NUM_TASKS:-<config-default>}"
 if [[ " ${SETS} " == *" fair "* || " ${SETS} " == *" ablation "* ]]; then
   python scripts/make_stage_b_fair_configs.py \
     --base-dir configs/hf_lora_stage_b_nonlocal_gated \
