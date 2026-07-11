@@ -125,7 +125,10 @@ class AsyncEnvWrapper:
         due = self.current_time + max(0, delay)
         use_oracle_links = bool(self.config.get("use_oracle_event_links", True))
         metadata, diagnostic_metadata = self._split_event_metadata(event)
-        metadata = {**metadata, "source_time": event.event_time, "delay": delay}
+        metadata = {**metadata, "delay": delay}
+        diagnostic_metadata.setdefault("source_time", event.event_time)
+        if bool(self.config.get("expose_source_time", False)):
+            metadata["source_time"] = event.event_time
         if use_oracle_links:
             if event.related_tool is not None:
                 metadata.setdefault("tool", event.related_tool)

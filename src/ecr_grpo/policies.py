@@ -3,7 +3,9 @@ from __future__ import annotations
 import math
 import random
 import hashlib
+import pickle
 from collections import defaultdict
+from pathlib import Path
 
 from ecr_grpo.types import PolicyAction, StepRecord
 
@@ -98,6 +100,41 @@ class TabularSoftmaxPolicy:
     def update_grpo(self, steps: list[StepRecord], lr: float) -> dict[str, float]:
         return self.update(steps, lr=lr)
 
+    def save(self, path: str) -> None:
+        output = Path(path)
+        output.mkdir(parents=True, exist_ok=True)
+        state = {
+            "action_space": list(self.action_space),
+            "temperature": self.temperature,
+            "init_scale": self.init_scale,
+            "entropy_bonus": self.entropy_bonus,
+            "logits": {key: dict(value) for key, value in self.logits.items()},
+            "rng_state": self.rng.getstate(),
+        }
+        with (output / "tabular_policy.pkl").open("wb") as handle:
+            pickle.dump(state, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    def load(self, path: str) -> None:
+        with (Path(path) / "tabular_policy.pkl").open("rb") as handle:
+            state = pickle.load(handle)
+        if list(state["action_space"]) != self.action_space:
+            raise ValueError("Checkpoint action space does not match the current policy")
+        self.temperature = float(state["temperature"])
+        self.init_scale = float(state["init_scale"])
+        self.entropy_bonus = float(state["entropy_bonus"])
+        self.logits = defaultdict(
+            self._new_logits,
+            {key: dict(value) for key, value in state["logits"].items()},
+        )
+        self.rng.setstate(state["rng_state"])
+
+    def save_training_state(self, path: str) -> None:
+        # The tabular policy has no optimizer; weights and RNG are stored by save().
+        Path(path).write_bytes(b"")
+
+    def load_training_state(self, path: str, lr: float) -> None:
+        del path, lr
+
     def _new_logits(self) -> dict[str, float]:
         return {
             action: self.rng.uniform(-self.init_scale, self.init_scale)
@@ -146,6 +183,9 @@ def build_policy(config: dict, action_space: list[str], seed: int = 0):
             action_score_calibration=str(policy_cfg.get("action_score_calibration", "pmi")),
             use_chat_template=bool(policy_cfg.get("use_chat_template", True)),
             update_score_mode=str(policy_cfg.get("update_score_mode", "full_distribution")),
+            max_prompt_tokens=int(policy_cfg.get("max_prompt_tokens", 1024)),
+            gradient_checkpointing=bool(policy_cfg.get("gradient_checkpointing", False)),
+            entropy_bonus=float(config.get("training", {}).get("entropy_bonus", 0.0)),
             clip_eps=float(config.get("training", {}).get("clip_eps", 0.2)),
             grad_accum_steps=int(config.get("training", {}).get("grad_accum_steps", 1)),
             max_grad_norm=float(config.get("training", {}).get("max_grad_norm", 1.0)),

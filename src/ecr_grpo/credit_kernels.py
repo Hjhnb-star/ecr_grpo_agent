@@ -52,6 +52,17 @@ class UniformKernel:
         return [1.0 / len(steps) for _ in steps]
 
 
+class LatestStepKernel:
+    name = "latest_step"
+
+    def weights(self, event: AsyncEvent, steps: list[StepRecord]) -> list[float]:
+        if not steps:
+            return []
+        weights = [0.0 for _ in steps]
+        weights[-1] = 1.0
+        return weights
+
+
 class RecencyDecayKernel:
     name = "recency"
 
@@ -124,12 +135,16 @@ class EvidenceKernel:
         return normalize_weights([score for score, _ in scored])
 
 
-def classify_credit_event(event: AsyncEvent) -> str:
+def classify_credit_event(event: AsyncEvent, delayed_event_threshold: int = 1) -> str:
     """Route feedback events by the credit question they ask."""
     delta = str(event.observation_delta or "").lower()
     tags = metadata_tags(event.metadata)
     event_type = str(event.event_type)
     route = str(event.metadata.get("credit_route", "")).lower()
+    try:
+        delay = int(event.metadata.get("delay", 0))
+    except (TypeError, ValueError):
+        delay = 0
 
     if (
         route == "non_local"
@@ -137,6 +152,8 @@ def classify_credit_event(event: AsyncEvent) -> str:
         or "non_local_support" in tags
     ):
         return "non_local"
+    if event_type == "partial_reward" and delay >= max(1, delayed_event_threshold):
+        return "delayed_feedback"
     if event_type in {"timeout", "interruption"}:
         return "local_negative"
     if event_type == "terminal_success" or (event.terminal and event.reward >= 0.0):
@@ -174,6 +191,15 @@ class GatedEvidenceKernel:
         text_weight: float = 0.75,
         evidence_temperature: float = 1.0,
         evidence_top_k: int = 0,
+        adaptive_evidence: bool = True,
+        evidence_confidence_floor: float = 0.25,
+        evidence_confidence_power: float = 1.0,
+        delayed_event_threshold: int = 1,
+        local_window: int = 3,
+        delayed_window: int = 8,
+        nonlocal_window: int = 12,
+        terminal_failure_window: int = 8,
+        ambiguous_window: int = 6,
         local_recency_weight: float = 1.0,
         local_evidence_weight: float = 0.0,
         nonlocal_evidence_weight: float = 0.85,
@@ -200,6 +226,19 @@ class GatedEvidenceKernel:
         self.uniform = UniformKernel()
         self.evidence_temperature = max(evidence_temperature, 1e-6)
         self.evidence_top_k = max(0, evidence_top_k)
+        self.adaptive_evidence = bool(adaptive_evidence)
+        self.evidence_confidence_floor = min(1.0, max(0.0, evidence_confidence_floor))
+        self.evidence_confidence_power = max(0.0, evidence_confidence_power)
+        self.delayed_event_threshold = max(1, int(delayed_event_threshold))
+        self.category_windows = {
+            "local_positive": max(0, int(local_window)),
+            "local_negative": max(0, int(local_window)),
+            "delayed_feedback": max(0, int(delayed_window)),
+            "non_local": max(0, int(nonlocal_window)),
+            "terminal_success": 0,
+            "terminal_failure": max(0, int(terminal_failure_window)),
+            "ambiguous": max(0, int(ambiguous_window)),
+        }
         self.routes = {
             "local_positive": [
                 ("recency", local_recency_weight),
@@ -210,6 +249,10 @@ class GatedEvidenceKernel:
                 ("evidence", local_evidence_weight),
             ],
             "non_local": [
+                ("evidence", nonlocal_evidence_weight),
+                ("recency", nonlocal_recency_weight),
+            ],
+            "delayed_feedback": [
                 ("evidence", nonlocal_evidence_weight),
                 ("recency", nonlocal_recency_weight),
             ],
@@ -229,20 +272,42 @@ class GatedEvidenceKernel:
         }
         self.last_category = "ambiguous"
         self.last_reasons: list[str] = []
+        self.last_confidence = 0.0
+        self._last_evidence_confidence = 0.0
 
     def weights(self, event: AsyncEvent, steps: list[StepRecord]) -> list[float]:
         if not steps:
             self.last_reasons = []
+            self.last_confidence = 0.0
             return []
-        category = classify_credit_event(event)
+        category = classify_credit_event(event, self.delayed_event_threshold)
         self.last_category = category
         components = self.routes.get(category, self.routes["ambiguous"])
-        weights, reason_parts = self._blend(event, steps, components, local=category.startswith("local"))
-        self.last_reasons = [
-            f"{category}:{';'.join(parts) if parts else 'no_component'}"
-            for parts in reason_parts
-        ]
-        return weights
+        eligible_indices = self._eligible_indices(category, len(steps))
+        eligible_steps = [steps[idx] for idx in eligible_indices]
+        local = category.startswith("local")
+        weights, reason_parts = self._blend(
+            event,
+            eligible_steps,
+            components,
+            local=local,
+        )
+        expanded_weights = [0.0 for _ in steps]
+        expanded_reasons = [f"{category}:outside_window" for _ in steps]
+        for source_idx, target_idx in enumerate(eligible_indices):
+            expanded_weights[target_idx] = weights[source_idx]
+            parts = reason_parts[source_idx]
+            expanded_reasons[target_idx] = (
+                f"{category}:{';'.join(parts) if parts else 'no_component'}"
+            )
+        self.last_reasons = expanded_reasons
+        return expanded_weights
+
+    def _eligible_indices(self, category: str, length: int) -> list[int]:
+        window = self.category_windows.get(category, 0)
+        if window <= 0 or length <= window:
+            return list(range(length))
+        return list(range(length - window, length))
 
     def _blend(
         self,
@@ -253,16 +318,45 @@ class GatedEvidenceKernel:
         local: bool,
     ) -> tuple[list[float], list[list[str]]]:
         active = [(name, weight) for name, weight in components if weight > 0.0]
-        total = sum(weight for _, weight in active)
-        if total <= EPS:
+        if not active:
             active = [("uniform", 1.0)]
+
+        prepared = []
+        self.last_confidence = 1.0 if local else 0.0
+        for name, alpha in active:
+            sub_weights, sub_reasons = self._component_weights(
+                event,
+                steps,
+                name,
+                local=local,
+            )
+            adjusted_alpha = alpha
+            if name == "evidence":
+                self.last_confidence = self._last_evidence_confidence
+                if self.adaptive_evidence:
+                    confidence_scale = self.evidence_confidence_floor + (
+                        1.0 - self.evidence_confidence_floor
+                    ) * self._last_evidence_confidence**self.evidence_confidence_power
+                    adjusted_alpha *= confidence_scale
+            prepared.append((name, adjusted_alpha, sub_weights, sub_reasons))
+
+        total = sum(alpha for _, alpha, _, _ in prepared)
+        if total <= EPS:
+            prepared = [
+                (
+                    "uniform",
+                    1.0,
+                    self.uniform.weights(event, steps),
+                    ["uniform_fallback" for _ in steps],
+                )
+            ]
             total = 1.0
+            self.last_confidence = 0.0
 
         out = [0.0 for _ in steps]
         reason_parts: list[list[str]] = [[] for _ in steps]
-        for name, alpha in active:
+        for name, alpha, sub_weights, sub_reasons in prepared:
             component_weight = alpha / total
-            sub_weights, sub_reasons = self._component_weights(event, steps, name, local=local)
             for idx, weight in enumerate(sub_weights):
                 out[idx] += component_weight * weight
                 if weight > 0.0:
@@ -309,7 +403,29 @@ class GatedEvidenceKernel:
             scores = [score**power for score in scores]
             reasons = [f"{reason}+temp:{self.evidence_temperature:.2f}" for reason in reasons]
 
-        return normalize_weights(scores), reasons
+        weights = normalize_weights(scores)
+        self._last_evidence_confidence = self._evidence_confidence(weights, reasons)
+        return weights, reasons
+
+    def _evidence_confidence(self, weights: list[float], reasons: list[str]) -> float:
+        if not weights:
+            return 0.0
+        semantic_markers = ("exact_step", "tool", "subgoal", "tags:", "text:")
+        semantic_mass = sum(
+            weight
+            for weight, reason in zip(weights, reasons)
+            if any(marker in reason for marker in semantic_markers)
+        )
+        if semantic_mass <= EPS:
+            return 0.0
+        if len(weights) == 1:
+            return 1.0
+        entropy = -sum(weight * math.log(max(weight, EPS)) for weight in weights)
+        normalized_entropy = entropy / math.log(len(weights))
+        ranked = sorted(weights, reverse=True)
+        margin = ranked[0] - ranked[1]
+        concentration = max(0.0, 1.0 - normalized_entropy)
+        return min(1.0, semantic_mass * max(concentration, margin))
 
 
 def build_credit_kernel(config: dict) -> CreditKernel:
@@ -322,6 +438,8 @@ def build_credit_kernel(config: dict) -> CreditKernel:
         return UniformKernel()
     if name == "recency":
         return RecencyDecayKernel(lambda_=float(config.get("lambda", 0.3)))
+    if name in {"local", "latest", "latest_step", "step_local"}:
+        return LatestStepKernel()
     if name == "dependency":
         return DependencyAwareKernel(
             lambda_=float(config.get("lambda", 0.3)),
@@ -350,7 +468,16 @@ def build_credit_kernel(config: dict) -> CreditKernel:
             text_weight=float(config.get("text_weight", 0.75)),
             evidence_temperature=float(config.get("evidence_temperature", 1.0)),
             evidence_top_k=int(config.get("evidence_top_k", 0)),
+            adaptive_evidence=bool(config.get("adaptive_evidence", True)),
+            evidence_confidence_floor=float(config.get("evidence_confidence_floor", 0.25)),
+            evidence_confidence_power=float(config.get("evidence_confidence_power", 1.0)),
             local_recency_weight=float(config.get("local_recency_weight", 1.0)),
+            delayed_event_threshold=int(config.get("delayed_event_threshold", 1)),
+            local_window=int(config.get("local_window", 3)),
+            delayed_window=int(config.get("delayed_window", 8)),
+            nonlocal_window=int(config.get("nonlocal_window", 12)),
+            terminal_failure_window=int(config.get("terminal_failure_window", 8)),
+            ambiguous_window=int(config.get("ambiguous_window", 6)),
             local_evidence_weight=float(config.get("local_evidence_weight", 0.0)),
             nonlocal_evidence_weight=float(config.get("nonlocal_evidence_weight", 0.85)),
             nonlocal_recency_weight=float(config.get("nonlocal_recency_weight", 0.15)),

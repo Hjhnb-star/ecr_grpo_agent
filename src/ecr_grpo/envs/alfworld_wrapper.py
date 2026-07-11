@@ -1,8 +1,131 @@
 from __future__ import annotations
 
+import copy
+import re
+from pathlib import Path
 from typing import Any
 
 from ecr_grpo.types import AsyncEvent
+
+
+ALFWORLD_TASK_TYPES = (
+    "pick_and_place_simple",
+    "look_at_obj_in_light",
+    "pick_two_obj_and_place",
+    "pick_clean_then_place_in_recep",
+    "pick_heat_then_place_in_recep",
+    "pick_cool_then_place_in_recep",
+)
+
+ALFWORLD_SEMANTIC_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "from",
+    "in",
+    "into",
+    "is",
+    "it",
+    "of",
+    "on",
+    "the",
+    "then",
+    "there",
+    "to",
+    "up",
+    "with",
+    "you",
+    "your",
+}
+
+ALFWORLD_VERB_ALIASES = {
+    "arrive": "go",
+    "close": "close",
+    "closed": "close",
+    "cool": "cool",
+    "cooled": "cool",
+    "examine": "examine",
+    "go": "go",
+    "heat": "heat",
+    "heated": "heat",
+    "look": "examine",
+    "open": "open",
+    "opened": "open",
+    "pick": "take",
+    "picked": "take",
+    "place": "put",
+    "placed": "put",
+    "put": "put",
+    "slice": "slice",
+    "sliced": "slice",
+    "take": "take",
+    "taken": "take",
+    "toggle": "toggle",
+    "turn": "toggle",
+    "wash": "clean",
+    "washed": "clean",
+    "clean": "clean",
+    "cleaned": "clean",
+}
+
+
+class ALFWorldGameCatalog:
+    """Loads one ALFWorld split once and creates deterministic single-game envs."""
+
+    def __init__(self, *, alfworld_config: str, split: str) -> None:
+        try:
+            import yaml
+            import alfworld.agents.environment as environment
+        except ImportError as exc:
+            raise RuntimeError(
+                "ALFWorld requires optional dependencies. Install the alfworld extra."
+            ) from exc
+
+        with open(alfworld_config, "r", encoding="utf-8") as file:
+            self.config = yaml.safe_load(file)
+        self.split = split
+        env_type = self.config["env"]["type"]
+        try:
+            if hasattr(environment, "get_environment"):
+                env_cls = environment.get_environment(env_type)
+            else:
+                env_cls = getattr(environment, env_type)
+        except (AttributeError, KeyError) as exc:
+            available = [name for name in dir(environment) if name.endswith("Env")]
+            raise RuntimeError(
+                f"ALFWorld environment type '{env_type}' is unavailable. "
+                f"Available direct Env names: {available}."
+            ) from exc
+        self.manager = env_cls(self.config, train_eval=split)
+        self.game_files = sorted(str(path) for path in getattr(self.manager, "game_files", []))
+        if not self.game_files:
+            raise RuntimeError(f"ALFWorld split '{split}' did not expose any game_files")
+
+    def make_raw_env(self, game_file: str | None = None):
+        manager = copy.copy(self.manager)
+        if game_file is not None:
+            manager.game_files = [game_file]
+            if hasattr(manager, "num_games"):
+                manager.num_games = 1
+        return manager.init_env(batch_size=1)
+
+    def task_metadata(self, game_file: str) -> dict[str, str]:
+        normalized = str(game_file).replace("\\", "/")
+        parts = [part for part in normalized.split("/") if part]
+        split_index = max((idx for idx, part in enumerate(parts) if part == self.split), default=-1)
+        relative = "/".join(parts[split_index + 1 :]) if split_index >= 0 else Path(normalized).name
+        if relative.endswith("/game.tw-pddl"):
+            relative = relative[: -len("/game.tw-pddl")]
+        task_type = next((kind for kind in ALFWORLD_TASK_TYPES if kind in relative), "unknown")
+        safe_id = re.sub(r"[^a-zA-Z0-9_.=-]+", "__", relative).strip("_")
+        return {
+            "actual_task_id": relative,
+            "task_id": f"{self.split}__{safe_id}",
+            "task_type": task_type,
+            "split": self.split,
+            "game_file": game_file,
+        }
 
 
 class ALFWorldEnv:
@@ -39,49 +162,42 @@ class ALFWorldEnv:
         fallback_action_space: list[str],
         shaping_config: dict | None = None,
         seed: int = 0,
+        catalog: ALFWorldGameCatalog | None = None,
+        game_file: str | None = None,
+        task_metadata: dict[str, Any] | None = None,
+        history_turns: int = 4,
         raw_env: Any | None = None,
         loaded_config: dict[str, Any] | None = None,
     ) -> None:
         if raw_env is None:
-            try:
-                import yaml
-                import alfworld.agents.environment as environment
-            except ImportError as exc:
-                raise RuntimeError(
-                    "ALFWorldEnv requires optional dependencies. Install ALFWorld and PyYAML, "
-                    "or use the synthetic environment."
-                ) from exc
-
-            with open(alfworld_config, "r", encoding="utf-8") as f:
-                self.config = yaml.safe_load(f)
-            env_type = self.config["env"]["type"]
-            try:
-                if hasattr(environment, "get_environment"):
-                    env_cls = environment.get_environment(env_type)
-                else:
-                    env_cls = getattr(environment, env_type)
-            except (AttributeError, KeyError) as exc:
-                available = [name for name in dir(environment) if name.endswith("Env")]
-                raise RuntimeError(
-                    f"ALFWorld environment type '{env_type}' is not available. "
-                    f"Check env.type in {alfworld_config}. Available direct Env names: {available}. "
-                    "If your ALFWorld version provides get_environment(), this wrapper will use it."
-                ) from exc
-            self.env = env_cls(self.config, train_eval=split).init_env(batch_size=1)
+            catalog = catalog or ALFWorldGameCatalog(
+                alfworld_config=alfworld_config,
+                split=split,
+            )
+            self.config = catalog.config
+            self.env = catalog.make_raw_env(game_file)
         else:
             self.config = loaded_config or {"env": {"type": "mock"}}
             self.env = raw_env
+        self.split = split
+        self.game_file = game_file
+        self.task_metadata = dict(task_metadata or {})
+        self.history_turns = max(0, int(history_turns))
         self.fallback_action_space = list(fallback_action_space)
         self.latest_admissible = list(fallback_action_space)
         self.task_id = "alfworld_task"
         self.actual_task_id = "alfworld_task"
+        self.task_type = str(self.task_metadata.get("task_type", "unknown"))
         self.episode_id = "alfworld_episode"
         self.step_count = 0
         self.seed = seed
         self.shaping_config = shaping_config or {}
+        self.previous_score = 0.0
         self.previous_observation = ""
         self.previous_action = ""
         self.seen_observations: set[str] = set()
+        self.task_goal = ""
+        self.history: list[tuple[str, str]] = []
 
     @property
     def action_space(self) -> list[str]:
@@ -91,13 +207,20 @@ class ALFWorldEnv:
         obs, infos = self.env.reset()
         obs_text = self._first(obs, "")
         self.step_count = 0
-        self.actual_task_id = self._read_task_id(infos)
+        self.previous_score = 0.0
+        self.actual_task_id = str(
+            self.task_metadata.get("actual_task_id")
+            or self._read_task_id(infos)
+        )
+        self.task_type = str(self.task_metadata.get("task_type", self.task_type))
         self.task_id = task_id or self.actual_task_id
         self.episode_id = episode_id or f"{self.task_id}_episode"
         self.latest_admissible = self._read_admissible(infos)
         self.previous_observation = self._normalize_obs(obs_text)
         self.previous_action = ""
         self.seen_observations = {self.previous_observation}
+        self.task_goal = self._extract_task_goal(obs_text)
+        self.history = []
         return self._format_observation(obs_text, infos)
 
     def step(self, action: str) -> tuple[str, float, bool, dict]:
@@ -105,7 +228,9 @@ class ALFWorldEnv:
         prev_admissible = list(self.latest_admissible)
         obs, scores, dones, infos = self.env.step([action])
         obs_text = self._first(obs, "")
-        env_reward = self._as_float(scores, default=0.0)
+        raw_score = self._as_float(scores, default=self.previous_score)
+        env_reward = raw_score - self.previous_score
+        self.previous_score = raw_score
         done = self._as_bool(dones, default=False)
         self.latest_admissible = self._read_admissible(infos)
         success = self._as_bool(self._read_info_value(infos, "won", default=False), default=False)
@@ -117,9 +242,18 @@ class ALFWorldEnv:
             prev_admissible=prev_admissible,
             next_obs_norm=next_obs_norm,
         )
-        total_reward = env_reward + shaping_reward
-        tags = self._event_tags(action, shaping_reason)
-        if env_reward != 0.0:
+        terminal_reward = env_reward
+        if done and abs(terminal_reward) <= 1e-12:
+            reward_key = "terminal_success_reward" if success else "terminal_failure_reward"
+            default_reward = 1.0 if success else -0.5
+            terminal_reward = float(self.shaping_config.get(reward_key, default_reward))
+        task_reward = terminal_reward if done else env_reward
+        total_reward = task_reward + shaping_reward
+        tags = self._event_tags(shaping_reason)
+        event_observation = self._observation_delta(obs_text)
+        effect_tags = self._semantic_tags(event_observation)
+        action_tags = self._semantic_tags(action)
+        if not done and env_reward != 0.0:
             events.append(
                 AsyncEvent(
                     task_id=self.task_id,
@@ -131,11 +265,14 @@ class ALFWorldEnv:
                     related_step_id=self.step_count - 1,
                     related_tool=action,
                     related_subgoal=action,
-                    observation_delta="alfworld_score",
+                    observation_delta=event_observation,
                     terminal=False,
                     metadata={
-                        "action": action,
-                        "tags": ["alfworld_score", "env_reward", *tags],
+                        "tags": ["alfworld_score", "env_reward", *tags, *effect_tags]
+                    },
+                    diagnostic_metadata={
+                        "source_action": action,
+                        "source_step_id": self.step_count - 1,
                     },
                 )
             )
@@ -151,16 +288,18 @@ class ALFWorldEnv:
                     related_step_id=self.step_count - 1,
                     related_tool=action,
                     related_subgoal=action,
-                    observation_delta=shaping_reason,
+                    observation_delta=f"{shaping_reason}: {event_observation}",
                     terminal=False,
                     metadata={
-                        "action": action,
-                        "tags": ["alfworld_shaping", *tags],
+                        "tags": ["alfworld_shaping", *tags, *effect_tags]
+                    },
+                    diagnostic_metadata={
+                        "source_action": action,
+                        "source_step_id": self.step_count - 1,
                     },
                 )
             )
         if done:
-            terminal_reward = 1.0 if success else -0.5
             events.append(
                 AsyncEvent(
                     task_id=self.task_id,
@@ -172,37 +311,45 @@ class ALFWorldEnv:
                     related_step_id=self.step_count - 1,
                     related_tool=action,
                     related_subgoal=action,
-                    observation_delta="alfworld_done",
+                    observation_delta=event_observation,
                     terminal=True,
                     metadata={
-                        "action": action,
                         "tags": [
                             "alfworld_done",
                             "success" if success else "failure",
                             *tags,
+                            *effect_tags,
                         ],
+                    },
+                    diagnostic_metadata={
+                        "source_action": action,
+                        "source_step_id": self.step_count - 1,
                     },
                 )
             )
         self.previous_observation = next_obs_norm
         self.previous_action = action
         self.seen_observations.add(next_obs_norm)
-        actual_task_id = self._read_task_id(infos)
+        self.history.append((action, self._compact_text(obs_text)))
+        self.history = self.history[-self.history_turns :] if self.history_turns else []
+        actual_task_id = str(self.task_metadata.get("actual_task_id") or self._read_task_id(infos))
         self.actual_task_id = actual_task_id
         info = {
             "task_id": self.task_id,
             "actual_task_id": actual_task_id,
+            "task_type": self.task_type,
             "episode_id": self.episode_id,
             "step_id": self.step_count - 1,
             "events": events,
             "success": success,
-            "causal_action": total_reward > 0.0,
-            "expected_action": action,
+            "positive_transition": task_reward > 0.0 or shaping_reward > 0.0,
             "tool_name": action,
             "subgoal_id": action,
-            "public_tags": tags,
+            "public_tags": [*tags, *action_tags],
             "admissible_commands": self.latest_admissible,
             "env_reward": env_reward,
+            "raw_score": raw_score,
+            "task_reward": task_reward,
             "shaping_reward": shaping_reward,
             "shaping_reason": shaping_reason,
         }
@@ -236,11 +383,40 @@ class ALFWorldEnv:
         return cur
 
     def _format_observation(self, obs: str, infos) -> str:
-        admissible = "\n".join(f"- {a}" for a in self.latest_admissible[:40])
-        return f"{obs}\n\nAdmissible actions:\n{admissible}"
+        sections = []
+        if self.task_goal:
+            sections.append(f"Task:\n{self.task_goal}")
+        sections.append(f"Current observation:\n{obs}")
+        if self.history:
+            history = "\n".join(
+                f"{idx + 1}. {action} -> {result}"
+                for idx, (action, result) in enumerate(self.history)
+            )
+            sections.append(f"Recent interaction history:\n{history}")
+        return "\n\n".join(sections)
 
     def _normalize_obs(self, obs: str) -> str:
         return " ".join(str(obs).strip().lower().split())
+
+    def _extract_task_goal(self, obs: str) -> str:
+        match = re.search(r"your task is to:\s*(.+?)(?:\n|$)", str(obs), flags=re.IGNORECASE)
+        if match:
+            return self._compact_text(match.group(1), limit=320)
+        return self._compact_text(obs, limit=320)
+
+    def _compact_text(self, value: str, *, limit: int = 180) -> str:
+        compact = " ".join(str(value).strip().split())
+        if len(compact) <= limit:
+            return compact
+        return compact[: max(1, limit - 3)].rstrip() + "..."
+
+    def _observation_delta(self, obs: str) -> str:
+        current = self._normalize_obs(obs)
+        previous_tokens = set(self.previous_observation.split())
+        additions = [token for token in current.split() if token not in previous_tokens]
+        if additions:
+            return self._compact_text(" ".join(additions), limit=240)
+        return self._compact_text(obs, limit=240)
 
     def _first(self, value, default=None):
         if value is None:
@@ -262,11 +438,38 @@ class ALFWorldEnv:
         except (TypeError, ValueError):
             return default
 
-    def _event_tags(self, action: str, shaping_reason: str) -> list[str]:
-        tags = [action]
+    def _event_tags(self, shaping_reason: str) -> list[str]:
+        tags: list[str] = []
         for part in str(shaping_reason or "").replace("+", " ").split():
             if part and part != "disabled":
                 tags.append(part)
+        return tags
+
+    def _semantic_tags(self, text: str) -> list[str]:
+        """Extract public ALFWorld action/effect concepts without source-step links."""
+
+        tokens = [token.lower() for token in re.findall(r"[a-zA-Z0-9_]+", str(text))]
+        tags: list[str] = []
+        canonical_verbs = {
+            ALFWORLD_VERB_ALIASES[token]
+            for token in tokens
+            if token in ALFWORLD_VERB_ALIASES
+        }
+        tags.extend(f"verb_{verb}" for verb in sorted(canonical_verbs))
+
+        ignored = {
+            *ALFWORLD_SEMANTIC_STOPWORDS,
+            *ALFWORLD_VERB_ALIASES,
+            *ALFWORLD_VERB_ALIASES.values(),
+        }
+        for token in tokens:
+            if token in ignored or token.isdigit() or len(token) < 3:
+                continue
+            tag = f"entity_{token}"
+            if tag not in tags:
+                tags.append(tag)
+            if len(tags) >= 10:
+                break
         return tags
 
     def _shaping_reward(

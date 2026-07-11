@@ -1,6 +1,6 @@
 {
-  "experiment_name": "alfworld_gated_smoke",
-  "output_dir": "runs/alfworld_gated_smoke",
+  "experiment_name": "alfworld_gated_lowmem_smoke",
+  "output_dir": "runs/alfworld_lowmem_smoke",
   "seed": 7,
   "environment": {
     "name": "alfworld",
@@ -11,9 +11,9 @@
     "reuse_env": true,
     "max_cached_envs": 8,
     "history_turns": 4,
-    "num_tasks": 8,
-    "num_train_tasks": 8,
-    "max_steps": 30,
+    "num_tasks": 2,
+    "num_train_tasks": 2,
+    "max_steps": 15,
     "shaping": {
       "enabled": true,
       "valid_action_reward": 0.02,
@@ -22,7 +22,7 @@
       "stagnation_penalty": -0.02,
       "repeat_action_penalty": -0.03,
       "invalid_action_penalty": -0.05,
-      "terminal_success_reward": 1.0,
+      "terminal_success_reward": 1,
       "terminal_failure_reward": -0.5
     },
     "action_space": [
@@ -43,7 +43,7 @@
     "delay_prob": 0.3,
     "max_delay_steps": 3,
     "timeout_prob": 0.03,
-    "interruption_prob": 0.0,
+    "interruption_prob": 0,
     "missing_reward_prob": 0.05,
     "terminal_reward_delay": 2,
     "expose_source_time": false,
@@ -54,15 +54,15 @@
     "kernel": "gated_evidence",
     "output": "step_reward",
     "lambda": 0.25,
-    "local_lambda": 1.0,
+    "local_lambda": 1,
     "max_pending_age": 16,
     "timeout_penalty": -0.2,
     "temporal_weight": 0.5,
-    "exact_step_weight": 0.0,
+    "exact_step_weight": 0,
     "tool_weight": 0.5,
     "subgoal_weight": 0.5,
-    "tag_weight": 2.0,
-    "text_weight": 1.0,
+    "tag_weight": 2,
+    "text_weight": 1,
     "evidence_top_k": 5,
     "evidence_temperature": 0.8,
     "adaptive_evidence": true,
@@ -74,8 +74,8 @@
     "nonlocal_window": 12,
     "terminal_failure_window": 8,
     "ambiguous_window": 6,
-    "local_recency_weight": 1.0,
-    "local_evidence_weight": 0.0,
+    "local_recency_weight": 1,
+    "local_evidence_weight": 0,
     "nonlocal_evidence_weight": 0.85,
     "nonlocal_recency_weight": 0.15,
     "terminal_success_uniform_weight": 0.4,
@@ -91,7 +91,7 @@
     "advantage_mode": "step",
     "step_advantage_estimator": "trajectory_grouped_credit",
     "credit_weight_floor": 0.05,
-    "max_credit_multiplier": 4.0,
+    "max_credit_multiplier": 4,
     "update_impl": "standard_grpo"
   },
   "policy": {
@@ -109,11 +109,11 @@
     "action_selection": "score",
     "action_score_batch_size": 1,
     "update_score_mode": "streaming_distribution",
-    "max_prompt_tokens": 768,
+    "max_prompt_tokens": 512,
     "gradient_checkpointing": true
   },
   "training": {
-    "num_updates": 10,
+    "num_updates": 2,
     "tasks_per_update": 1,
     "task_sampling": {
       "mode": "success_aware",
@@ -123,34 +123,38 @@
       "uncertainty_weight": 0.7
     },
     "group_size": 2,
-    "learning_rate": 5.0e-6,
+    "learning_rate": 0.000005,
     "clip_eps": 0.2,
     "entropy_bonus": 0.01,
     "grad_accum_steps": 8,
     "step_advantage_estimator": "trajectory_grouped_credit",
-    "checkpoint_every": 5,
+    "checkpoint_every": 0,
     "optimizer": "grpo",
     "grpo_reward_unit": "step",
     "advantage_mode": "step"
   },
   "evaluation": {
     "split": "eval_out_of_distribution",
-    "every_updates": 5,
     "splits": [
       "eval_in_distribution",
       "eval_out_of_distribution"
     ],
-    "shaping": {"enabled": false},
-    "num_eval_tasks": 8,
+    "shaping": {
+      "enabled": false
+    },
+    "every_updates": 1,
+    "num_eval_tasks": 2,
     "async": {
       "enabled": false,
-      "delay_prob": 0.0,
+      "delay_prob": 0,
       "max_delay_steps": 0,
-      "timeout_prob": 0.0,
-      "interruption_prob": 0.0,
-      "missing_reward_prob": 0.0,
+      "timeout_prob": 0,
+      "interruption_prob": 0,
+      "missing_reward_prob": 0,
       "terminal_reward_delay": 0
     },
-    "delay_sweep": [0.0, 0.3]
+    "delay_sweep": [
+      0
+    ]
   }
 }

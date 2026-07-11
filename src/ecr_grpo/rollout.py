@@ -26,7 +26,7 @@ def collect_rollout_group(
 
     for sample_idx in range(group_size):
         episode_id = f"{group_id}_ep_{sample_idx:02d}"
-        env: AsyncEnvWrapper = env_factory()
+        env: AsyncEnvWrapper = _make_env(env_factory, task_id)
         obs = env.reset(task_id=task_id, episode_id=episode_id)
         buffer = PendingStepBuffer(max_age=max_pending_age)
         episodes.append(episode_id)
@@ -56,9 +56,10 @@ def collect_rollout_group(
                     "action": action.text,
                     "tags": info.get("public_tags", [action.text]),
                     "actual_task_id": info.get("actual_task_id"),
+                    "task_type": info.get("task_type"),
                 },
                 diagnostic_metadata={
-                    "causal_action": info.get("causal_action", False),
+                    "positive_transition": info.get("positive_transition"),
                     "expected_action": info.get("expected_action"),
                     "raw_tags": info.get("tags", []),
                     "actual_task_id": info.get("actual_task_id"),
@@ -90,3 +91,16 @@ def collect_rollout_group(
         events=all_events,
         assignments=all_assignments,
     )
+
+
+def _make_env(env_factory, task_id: str):
+    try:
+        return env_factory(task_id=task_id)
+    except TypeError as exc:
+        message = str(exc)
+        if (
+            "unexpected keyword argument" not in message
+            and "takes no arguments" not in message
+        ):
+            raise
+        return env_factory()

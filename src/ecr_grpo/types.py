@@ -77,6 +77,7 @@ class CreditAssignment:
     effective_steps: float = 1.0
     top_weight: float = 0.0
     top_margin: float = 0.0
+    routing_confidence: float = 0.0
 
 
 @dataclass

@@ -9,6 +9,28 @@ from ecr_grpo.policies import format_agent_prompt
 from ecr_grpo.types import PolicyAction, StepRecord
 
 
+def clipped_policy_logprob_gradient(
+    *,
+    new_logprob: float,
+    old_logprob: float,
+    advantage: float,
+    clip_eps: float,
+    ratio_cap: float = 10.0,
+) -> tuple[float, float, float]:
+    """Return loss, ratio, and d(loss)/d(new_logprob) for clipped GRPO."""
+
+    raw_ratio = math.exp(max(-60.0, min(60.0, new_logprob - old_logprob)))
+    ratio = min(ratio_cap, max(0.0, raw_ratio))
+    clipped = min(1.0 + clip_eps, max(1.0 - clip_eps, ratio))
+    loss = -min(ratio * advantage, clipped * advantage)
+    active = raw_ratio < ratio_cap and (
+        (advantage >= 0.0 and ratio <= 1.0 + clip_eps)
+        or (advantage < 0.0 and ratio >= 1.0 - clip_eps)
+    )
+    gradient = -advantage * ratio if active else 0.0
+    return loss, ratio, gradient
+
+
 class HFLoraPolicy:
     """HuggingFace causal-LM policy with an optional LoRA adapter.
 
@@ -43,6 +65,9 @@ class HFLoraPolicy:
         action_score_calibration: str = "pmi",
         use_chat_template: bool = True,
         update_score_mode: str = "full_distribution",
+        max_prompt_tokens: int = 1024,
+        gradient_checkpointing: bool = False,
+        entropy_bonus: float = 0.0,
         clip_eps: float = 0.2,
         grad_accum_steps: int = 1,
         max_grad_norm: float = 1.0,
@@ -58,6 +83,7 @@ class HFLoraPolicy:
             ) from exc
 
         self.torch = torch
+        self._auto_model_cls = AutoModelForCausalLM
         self.rng = random.Random(seed)
         self.action_space = list(action_space)
         self.model_id = model_id
@@ -70,6 +96,9 @@ class HFLoraPolicy:
         self.action_score_calibration = action_score_calibration.lower()
         self.use_chat_template = use_chat_template
         self.update_score_mode = update_score_mode.lower()
+        self.max_prompt_tokens = max(64, int(max_prompt_tokens))
+        self.gradient_checkpointing = bool(gradient_checkpointing)
+        self.entropy_bonus = float(entropy_bonus)
         self.clip_eps = clip_eps
         self.grad_accum_steps = max(1, grad_accum_steps)
         self.max_grad_norm = max_grad_norm
@@ -78,8 +107,11 @@ class HFLoraPolicy:
             self.action_selection = "score"
         if self.action_selection not in {"score", "generate"}:
             raise ValueError("HF action_selection must be 'score' or 'generate'")
-        if self.update_score_mode not in {"selected", "full_distribution"}:
-            raise ValueError("HF update_score_mode must be 'selected' or 'full_distribution'")
+        if self.update_score_mode not in {"selected", "full_distribution", "streaming_distribution"}:
+            raise ValueError(
+                "HF update_score_mode must be 'selected', 'full_distribution', "
+                "or 'streaming_distribution'"
+            )
         if self.action_score_normalization not in {"sum", "mean", "sqrt"}:
             raise ValueError("HF action_score_normalization must be 'sum', 'mean', or 'sqrt'")
         if self.action_score_calibration not in {"none", "pmi"}:
@@ -108,12 +140,17 @@ class HFLoraPolicy:
             if "dtype" in kwargs:
                 kwargs["torch_dtype"] = kwargs.pop("dtype")
             self.model = AutoModelForCausalLM.from_pretrained(model_id, **kwargs)
+        self._model_load_kwargs = dict(kwargs)
         self.model.to(self.device)
 
         if adapter_path:
             from peft import PeftModel
 
-            self.model = PeftModel.from_pretrained(self.model, adapter_path)
+            self.model = PeftModel.from_pretrained(
+                self.model,
+                adapter_path,
+                is_trainable=True,
+            )
         elif use_lora:
             try:
                 from peft import LoraConfig, TaskType, get_peft_model
@@ -128,6 +165,12 @@ class HFLoraPolicy:
             )
             self.model = get_peft_model(self.model, lora_cfg)
 
+        if self.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable()
+            if hasattr(self.model, "enable_input_require_grads"):
+                self.model.enable_input_require_grads()
+            if hasattr(self.model, "config"):
+                self.model.config.use_cache = False
         self.model.train()
         self.optimizer = None
         self._response_id_cache: dict[str, list[int]] = {}
@@ -181,10 +224,9 @@ class HFLoraPolicy:
     ) -> PolicyAction:
         torch = self.torch
         actions = action_space or self.action_space
-        prompt = format_agent_prompt(observation, actions)
-        encoded = self.tokenizer(prompt, return_tensors="pt")
-        prompt_ids = encoded.input_ids.to(self.device)
-        attention_mask = encoded.attention_mask.to(self.device)
+        encoded_ids = self._encode_prompt(observation, actions)
+        prompt_ids = torch.tensor([encoded_ids], device=self.device, dtype=torch.long)
+        attention_mask = torch.ones_like(prompt_ids, device=self.device)
         gen_kwargs: dict[str, Any] = {
             "input_ids": prompt_ids,
             "attention_mask": attention_mask,
@@ -218,29 +260,43 @@ class HFLoraPolicy:
     def update(self, steps: list[StepRecord], lr: float) -> dict[str, float]:
         if not steps:
             return {"policy_loss": 0.0, "entropy": 0.0}
-        if self.optimizer is None:
-            trainable = [p for p in self.model.parameters() if p.requires_grad]
-            self.optimizer = self.torch.optim.AdamW(trainable, lr=lr)
+        self._ensure_optimizer(lr)
 
         torch = self.torch
-        self.model.train()
+        self.model.eval()
         self.optimizer.zero_grad(set_to_none=True)
         total_loss = 0.0
         total_ratio = 0.0
         total_entropy = 0.0
+        total_normalized_entropy = 0.0
+        total_effective_actions = 0.0
 
         for idx, step in enumerate(steps, start=1):
             prompt_ids = step.prompt_ids or self._encode_prompt(step.observation, step.action_space)
-            if self.action_selection == "score":
+            streamed = self.action_selection == "score" and self.update_score_mode == "streaming_distribution"
+            if streamed:
+                stream_stats = self._streaming_candidate_backward(step)
+                total_loss += stream_stats["loss"]
+                total_ratio += stream_stats["ratio"]
+                total_entropy += stream_stats["entropy"]
+                total_normalized_entropy += stream_stats["normalized_entropy"]
+                total_effective_actions += stream_stats["effective_actions"]
+            elif self.action_selection == "score":
                 actions = step.action_space or self.action_space
                 if self.update_score_mode == "selected":
+                    if step.action not in actions:
+                        actions = list(actions) + [step.action]
+                    with torch.no_grad():
+                        scores = self._candidate_scores_for_observation(step.observation, actions)
+                        log_probs, entropy = self._candidate_log_distribution_from_scores(scores)
+                        exact_value = log_probs[actions.index(step.action)].detach()
                     response_ids = step.response_ids or self._encode_response(step.action)
-                    new_logprob = self._sequence_score_for_observation(
+                    selected_score = self._sequence_score_for_observation(
                         step.observation,
                         actions,
                         response_ids,
                     )
-                    entropy = self._candidate_entropy_no_grad(step.observation, actions)
+                    new_logprob = selected_score + (exact_value - selected_score.detach())
                 else:
                     new_logprob, entropy = self._candidate_action_logprob(
                         step.observation,
@@ -251,15 +307,21 @@ class HFLoraPolicy:
                 response_ids = step.response_ids or self._encode_response(step.action)
                 new_logprob = self._sequence_logprob(prompt_ids, response_ids)
                 entropy = self.torch.tensor(0.0, device=self.device, dtype=new_logprob.dtype)
-            old_logprob = torch.tensor(step.old_logprob, device=self.device, dtype=new_logprob.dtype)
-            advantage = torch.tensor(step.advantage, device=self.device, dtype=new_logprob.dtype)
-            ratio = torch.exp(new_logprob - old_logprob).clamp(0.0, 10.0)
-            clipped = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps)
-            loss = -torch.minimum(ratio * advantage, clipped * advantage)
-            (loss / self.grad_accum_steps).backward()
-            total_loss += float(loss.detach().cpu())
-            total_ratio += float(ratio.detach().cpu())
-            total_entropy += float(entropy.detach().cpu())
+            if not streamed:
+                old_logprob = torch.tensor(step.old_logprob, device=self.device, dtype=new_logprob.dtype)
+                advantage = torch.tensor(step.advantage, device=self.device, dtype=new_logprob.dtype)
+                ratio = torch.exp(new_logprob - old_logprob).clamp(0.0, 10.0)
+                clipped = torch.clamp(ratio, 1.0 - self.clip_eps, 1.0 + self.clip_eps)
+                loss = -torch.minimum(ratio * advantage, clipped * advantage)
+                loss = loss - self.entropy_bonus * entropy
+                (loss / self.grad_accum_steps).backward()
+                entropy_value = float(entropy.detach().cpu())
+                action_count = len(step.action_space or self.action_space)
+                total_loss += float(loss.detach().cpu())
+                total_ratio += float(ratio.detach().cpu())
+                total_entropy += entropy_value
+                total_normalized_entropy += entropy_value / math.log(action_count) if action_count > 1 else 0.0
+                total_effective_actions += math.exp(entropy_value)
             if idx % self.grad_accum_steps == 0:
                 self._clip_grad_norm()
                 self.optimizer.step()
@@ -277,6 +339,58 @@ class HFLoraPolicy:
             "policy_loss": total_loss / denom,
             "mean_ratio": total_ratio / denom,
             "entropy": total_entropy / denom,
+            "normalized_policy_entropy": total_normalized_entropy / denom,
+            "effective_action_count": total_effective_actions / denom,
+        }
+
+    def _streaming_candidate_backward(self, step: StepRecord) -> dict[str, float]:
+        actions = list(step.action_space or self.action_space)
+        if step.action not in actions:
+            actions.append(step.action)
+        action_idx = actions.index(step.action)
+        with self.torch.no_grad():
+            scores = self._candidate_scores_for_observation(step.observation, actions)
+            log_probs, entropy = self._candidate_log_distribution_from_scores(scores)
+            probabilities = self.torch.exp(log_probs).detach().cpu().tolist()
+            log_prob_values = log_probs.detach().cpu().tolist()
+            new_logprob = float(log_probs[action_idx].detach().cpu())
+            entropy_value = float(entropy.detach().cpu())
+
+        loss, ratio, logprob_gradient = clipped_policy_logprob_gradient(
+            new_logprob=new_logprob,
+            old_logprob=float(step.old_logprob),
+            advantage=float(step.advantage),
+            clip_eps=self.clip_eps,
+        )
+        loss -= self.entropy_bonus * entropy_value
+        if abs(logprob_gradient) > 0.0 or self.entropy_bonus > 0.0:
+            inverse_temperature = 1.0 / max(self.temperature, 1e-6)
+            for candidate_idx, action in enumerate(actions):
+                policy_coefficient = logprob_gradient * (
+                    (1.0 if candidate_idx == action_idx else 0.0) - probabilities[candidate_idx]
+                )
+                entropy_coefficient = self.entropy_bonus * probabilities[candidate_idx] * (
+                    log_prob_values[candidate_idx] + entropy_value
+                )
+                coefficient = inverse_temperature * (policy_coefficient + entropy_coefficient)
+                coefficient /= self.grad_accum_steps
+                if abs(coefficient) <= 1e-12:
+                    continue
+                response_ids = self._encode_response(action)
+                score = self._sequence_score_for_observation(
+                    step.observation,
+                    actions,
+                    response_ids,
+                )
+                (score * coefficient).backward()
+
+        normalized_entropy = entropy_value / math.log(len(actions)) if len(actions) > 1 else 0.0
+        return {
+            "loss": loss,
+            "ratio": ratio,
+            "entropy": entropy_value,
+            "normalized_entropy": normalized_entropy,
+            "effective_actions": math.exp(entropy_value),
         }
 
     def update_grpo(self, steps: list[StepRecord], lr: float) -> dict[str, float]:
@@ -285,6 +399,70 @@ class HFLoraPolicy:
     def save(self, path: str) -> None:
         self.model.save_pretrained(path)
         self.tokenizer.save_pretrained(path)
+
+    def load(self, path: str) -> None:
+        checkpoint = str(Path(path))
+        if hasattr(self.model, "peft_config"):
+            from peft.utils.save_and_load import load_peft_weights, set_peft_model_state_dict
+
+            adapter_name = getattr(self.model, "active_adapter", "default")
+            if isinstance(adapter_name, (list, tuple)):
+                adapter_name = adapter_name[0]
+            weights = load_peft_weights(checkpoint, device=self.device)
+            set_peft_model_state_dict(self.model, weights, adapter_name=adapter_name)
+        else:
+            old_model = self.model
+            self.model = None
+            del old_model
+            if self.torch.cuda.is_available():
+                self.torch.cuda.empty_cache()
+            self.model = self._auto_model_cls.from_pretrained(
+                checkpoint,
+                **self._model_load_kwargs,
+            )
+            self.model.to(self.device)
+            if self.gradient_checkpointing:
+                self.model.gradient_checkpointing_enable()
+                if hasattr(self.model, "enable_input_require_grads"):
+                    self.model.enable_input_require_grads()
+                if hasattr(self.model, "config"):
+                    self.model.config.use_cache = False
+        self.optimizer = None
+        self._clear_runtime_caches()
+        self.model.train()
+
+    def save_training_state(self, path: str) -> None:
+        payload = {
+            "rng_state": self.rng.getstate(),
+            "torch_rng_state": self.torch.get_rng_state(),
+            "optimizer_state": self.optimizer.state_dict() if self.optimizer is not None else None,
+        }
+        if self.torch.cuda.is_available():
+            payload["cuda_rng_state_all"] = self.torch.cuda.get_rng_state_all()
+        self.torch.save(payload, path)
+
+    def load_training_state(self, path: str, lr: float) -> None:
+        try:
+            payload = self.torch.load(path, map_location=self.device, weights_only=False)
+        except TypeError:
+            payload = self.torch.load(path, map_location=self.device)
+        if payload.get("rng_state") is not None:
+            self.rng.setstate(payload["rng_state"])
+        if payload.get("torch_rng_state") is not None:
+            self.torch.set_rng_state(payload["torch_rng_state"].cpu())
+        cuda_states = payload.get("cuda_rng_state_all")
+        if cuda_states is not None and self.torch.cuda.is_available():
+            self.torch.cuda.set_rng_state_all([state.cpu() for state in cuda_states])
+        optimizer_state = payload.get("optimizer_state")
+        if optimizer_state is not None:
+            self._ensure_optimizer(lr)
+            self.optimizer.load_state_dict(optimizer_state)
+
+    def _ensure_optimizer(self, lr: float) -> None:
+        if self.optimizer is not None:
+            return
+        trainable = [parameter for parameter in self.model.parameters() if parameter.requires_grad]
+        self.optimizer = self.torch.optim.AdamW(trainable, lr=lr)
 
     def _clip_grad_norm(self) -> None:
         if self.max_grad_norm <= 0:
@@ -439,8 +617,6 @@ class HFLoraPolicy:
         return entropy.detach()
 
     def _old_logprob_for_action(self, scores, log_probs, action_idx: int):
-        if self.update_score_mode == "selected":
-            return scores[action_idx]
         return log_probs[action_idx]
 
     def _candidate_action_logprob(self, observation: str, actions: list[str], action: str):
@@ -452,7 +628,12 @@ class HFLoraPolicy:
 
     def _encode_prompt(self, observation: str, action_space: list[str]) -> list[int]:
         prompt = self._format_prompt(observation, action_space)
-        return self.tokenizer(prompt, add_special_tokens=True).input_ids
+        ids = self.tokenizer(prompt, add_special_tokens=True).input_ids
+        if len(ids) <= self.max_prompt_tokens:
+            return ids
+        head_size = max(16, self.max_prompt_tokens // 4)
+        tail_size = self.max_prompt_tokens - head_size
+        return ids[:head_size] + ids[-tail_size:]
 
     def _format_prompt(self, observation: str, action_space: list[str]) -> str:
         if self.use_chat_template and hasattr(self.tokenizer, "apply_chat_template"):

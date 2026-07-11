@@ -32,9 +32,10 @@ ALFWorld, ScienceWorld, WebShop, or tool-orchestration tasks.
   - `training.grpo_reward_unit="trajectory"` uses trajectory rewards
 - Lightweight tabular text-action policy for smoke experiments.
 - Optional HuggingFace causal-LM policy with LoRA, candidate-action scoring, and a compact
-  clipped GRPO update. The HF path defaults to candidate-distribution ratios, with an
-  explicit selected-action approximation available for tight memory budgets.
-- Optional ALFWorld environment adapter.
+  clipped GRPO update. The streaming distribution mode computes the exact candidate-softmax
+  first-order gradient while retaining only one candidate graph at a time. The legacy
+  selected approximation is rejected by reportable ALFWorld configs.
+- Fixed-game ALFWorld adapter plus a manifest/factory adapter for external text benchmarks.
 - Train/eval CLI.
 - Stage B config generation, server runner, and summary scripts.
 - Unit tests.
@@ -249,43 +250,56 @@ Install ALFWorld separately, then install this package with optional dependencie
 pip install -e ".[alfworld,hf]"
 ```
 
+If the ALFWorld data is missing on a new server, download it once:
+
+```bash
+alfworld-download
+```
+
 On the Linux server, first validate the generated benchmark configs without training:
 
 ```bash
-cd /data/anonym1/yf/hjh/ecr_grpo_agent
+cd /home/hjh/ecr_grpo_agent/ecr_grpo_agent
 export PYTHONPATH=src:${PYTHONPATH:-}
-export ALFWORLD_CONFIG=/path/to/alfworld/configs/base_config.yaml
-export MODEL_ID=/data/anonym1/yf/hjh/ecr_grpo_agent/models/Qwen/Qwen2.5-1.5B-Instruct
+export ALFWORLD_CONFIG=/home/hjh/ecr_grpo_agent/alfworld_src/configs/base_config.yaml
+export MODEL_ID=/home/hjh/ecr_grpo_agent/ecr_grpo_agent/models/Qwen/Qwen2.5-1.5B-Instruct
 
 DRY_RUN=1 \
-KERNELS="grpo recency evidence gated" \
+KERNELS="grpo local recency evidence gated" \
+BASE_CONFIG=configs/alfworld_gated_lowmem_smoke.json \
+OUTPUT_ROOT=runs/alfworld_lowmem_smoke \
 SEEDS="7" \
 TRAIN_SPLIT=train \
 EVAL_SPLIT=eval_out_of_distribution \
-NUM_TRAIN_TASKS=32 \
-NUM_EVAL_TASKS=32 \
-MAX_STEPS=50 \
+NUM_TRAIN_TASKS=2 \
+NUM_EVAL_TASKS=2 \
+EVAL_SPLITS="eval_in_distribution eval_out_of_distribution" \
+MAX_STEPS=15 \
 bash scripts/run_alfworld_server.sh
 ```
 
 Then run the same protocol on one GPU:
 
 ```bash
-DRY_RUN=0 OVERWRITE=1 GPU_ID=0 \
-KERNELS="grpo recency evidence gated" \
+DRY_RUN=0 OVERWRITE=1 GPU_ID=1 \
+BASE_CONFIG=configs/alfworld_gated_lowmem_smoke.json \
+OUTPUT_ROOT=runs/alfworld_lowmem_smoke \
+KERNELS="grpo local recency evidence gated" \
 SEEDS="7" \
 TRAIN_SPLIT=train \
 EVAL_SPLIT=eval_out_of_distribution \
-NUM_TRAIN_TASKS=32 \
-NUM_EVAL_TASKS=32 \
-MAX_STEPS=50 \
+NUM_TRAIN_TASKS=2 \
+NUM_EVAL_TASKS=2 \
+EVAL_SPLITS="eval_in_distribution eval_out_of_distribution" \
+MAX_STEPS=15 \
 bash scripts/run_alfworld_server.sh
 ```
 
-The runner uses `train` for policy updates and `eval_out_of_distribution` for held-out
-benchmark evaluation. `CLEAN_EVAL=1` is the default, so final benchmark metrics are measured
-without artificial async delay, missing rewards, or timeouts. Training still uses the async
-event stream from the main `async` config.
+The runner binds every rollout group to one real ALFWorld game and evaluates fixed
+`eval_in_distribution` and `eval_out_of_distribution` manifests. `CLEAN_EVAL=1`
+disables artificial delay, missing rewards, timeouts, and shaping during benchmark
+evaluation. Training still uses the configured asynchronous event stream. Do not add a
+space after a shell line-continuation backslash.
 
 You can also call the Python runner directly:
 
@@ -293,12 +307,13 @@ You can also call the Python runner directly:
 python -m ecr_grpo.run_alfworld \
   --base-config configs/alfworld_gated_smoke.json \
   --output-root runs/alfworld_fair \
-  --alfworld-config /path/to/alfworld/configs/base_config.yaml \
-  --model-id /data/anonym1/yf/hjh/ecr_grpo_agent/models/Qwen/Qwen2.5-1.5B-Instruct \
+  --alfworld-config /home/hjh/ecr_grpo_agent/alfworld_src/configs/base_config.yaml \
+  --model-id /home/hjh/ecr_grpo_agent/ecr_grpo_agent/models/Qwen/Qwen2.5-1.5B-Instruct \
   --kernels grpo recency evidence gated \
   --seeds 7 \
   --train-split train \
   --eval-split eval_out_of_distribution \
+  --eval-splits eval_in_distribution eval_out_of_distribution \
   --num-train-tasks 32 \
   --num-eval-tasks 32 \
   --max-steps 50 \
@@ -311,6 +326,46 @@ The runner skips a run if `eval_metrics.csv` already exists unless `--overwrite`
 The comparison summary is written to `runs/alfworld_fair/alfworld_summary.csv`. During eval,
 `eval_traces.jsonl` and `eval_action_rankings.jsonl` include the ALFWorld split and the actual
 gamefile-derived task id, which is useful for inspecting failed benchmark episodes.
+
+### Formal ALFWorld comparison
+
+After the low-memory smoke succeeds, use the reportable configuration:
+
+```bash
+BASE_CONFIG=configs/alfworld_gated_benchmark.json \
+OUTPUT_ROOT=runs/alfworld_fair \
+DRY_RUN=0 OVERWRITE=1 GPU_ID=1 \
+KERNELS="grpo local recency evidence gated" \
+SEEDS="7 13 21" \
+TRAIN_SPLIT=train \
+EVAL_SPLIT=eval_out_of_distribution \
+EVAL_SPLITS="eval_in_distribution eval_out_of_distribution" \
+NUM_TRAIN_TASKS=500 \
+NUM_EVAL_TASKS=9999 \
+MAX_STEPS=50 \
+bash scripts/run_alfworld_server.sh
+```
+
+The formal config uses group size 8. Every group is sampled from one fixed game.
+The ECR variants use trajectory-grouped credit advantages; trajectory GRPO keeps its
+ordinary trajectory advantage. All methods share the same model, task sampler, rollout
+budget, optimizer, seeds, and clean evaluation protocol.
+
+Primary benchmark columns are success rate, average steps, successful-episode steps,
+average tokens, raw environment return, failure/max-step rates, and per-task-type success
+rates. Training diagnostics include zero-advantage fraction, normalized policy entropy,
+effective action count, attribution entropy, effective attributed steps, and top margin.
+ALFWorld does not provide ground-truth causal steps, so these diagnostics must not be called
+causal accuracy.
+
+### Other Text Benchmarks
+
+Set environment name to external, provide a JSON/JSONL task manifest, and set environment
+factory to a Python callable in module:function form. Each manifest row should contain a
+task id, split, and optional task type. The factory receives split, task metadata, task id,
+and seed, and returns an environment with reset(), step(action), and a text action space.
+This is the intended thin integration point for ScienceWorld, WebShop, or tool benchmarks;
+the trainer, async event wrapper, metrics, and fixed-task protocol remain unchanged.
 
 ## Why Tabular Policy First?
 
